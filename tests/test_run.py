@@ -172,3 +172,21 @@ def test_plot_cli_writes_one_set_per_group_and_filters(tmp_path):
                "--platform", "tpu"])
     assert not any("cpu" in x.name for x in (tmp_path / "img2").glob("*.png"))
     assert np.all(["tpu" in x.name for x in (tmp_path / "img2").glob("*.png")])
+
+
+def test_exact_variants_f32_dataset_recall_is_one(tmp_path):
+    """Regression: exact variants on an ann HDF5 file reach recall 1.0 in f32 (full-file GT)."""
+    make_file(tmp_path / "sift-128-euclidean.hdf5", "euclidean", n=3000, nq=40, d=64)
+    for dt in ("f32", "bf16"):
+        run.main(["--dataset", "sift-128-euclidean", "--data-dir", str(tmp_path), "--algos",
+                  "jit_topk,blockwise,pallas_score", "--k", "10", "--dtype", dt,
+                  "--bn", "128", "--bk", "128", "--out", str(tmp_path / dt)])
+        recs = read_all(tmp_path / dt)
+        assert set(recs) == {"jit_topk", "blockwise", "pallas_score"}
+        for name, r in recs.items():
+            mt = r["metrics"]
+            assert mt["recall_compute_dtype"] == dt, name
+            if dt == "f32":
+                assert mt["recall"] == 1.0, name
+            assert mt["recall_epsilon_0.01"] >= mt["recall"], name
+            assert mt["recall_epsilon_0.01"] >= 0.99, name

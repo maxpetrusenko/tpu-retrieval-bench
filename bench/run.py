@@ -119,21 +119,25 @@ def get_inputs(a, m, n, d, ann=None):
 
 
 def compute_recall(a, k, q, e, ann, got_scores):
-    """(recall, n_queries_used). Dataset: knn_recall vs file truth. Synthetic: threshold recall
-    vs the numpy oracle, on a sampled subset of queries when M*N*D > REF_LIMIT."""
+    """(recall, n_queries_used, recall_epsilon_0.01). Dataset: knn_recall vs file truth, eps 1e-3
+    (`recall`) and 1e-2 (`recall_epsilon_0.01`, ann-benchmarks "epsilon" metric). bf16 scoring
+    perturbs distances by ~1e-3, so exact bf16 variants can fall below 1.0 at eps 1e-3 only.
+    Synthetic: threshold recall vs the numpy oracle (eps 1e-2 bf16 / 1e-4 f32), on a sampled
+    subset of queries when M*N*D > REF_LIMIT; no second recall."""
     if got_scores is None:
-        return None, None
+        return None, None, None
     m = q.shape[0]
     if ann is not None:
         dist = datasets.scores_to_distances(got_scores, a.metric, q)
-        return datasets.knn_recall(dist, ann["distances"], k), m
+        return (datasets.knn_recall(dist, ann["distances"], k), m,
+                datasets.knn_recall(dist, ann["distances"], k, eps=1e-2))
     idx = np.arange(m)
     if m * e.shape[0] * e.shape[1] > REF_LIMIT:
         idx = np.unique(np.linspace(0, m - 1, min(m, SAMPLE_QUERIES)).astype(int))
     ref_scores, _ = reference.numpy_ref(q[idx], e, k, metric=a.metric)
     rec = data.recall_at_k(ref_scores, np.asarray(got_scores)[idx],
                            eps=1e-2 if a.dtype == "bf16" else 1e-4)
-    return rec, len(idx)
+    return rec, len(idx), None
 
 
 def params_str(algo, m, n, d, a, bp):
@@ -202,7 +206,7 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
             algo, q, e, k, a, bp)
     else:
         raise SystemExit(f"unknown algo {algo}")
-    recall, n_recall_q = compute_recall(a, k, q, e, truth, got_scores)
+    recall, n_recall_q, recall_eps2 = compute_recall(a, k, q, e, truth, got_scores)
     best = min(res["times_s"])
     in_roofline = algo in roofline.VARIANTS
     dkind = hw["device_kind"]
@@ -226,6 +230,8 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
         metrics={
             "recall": recall,
             "recall_sampled_queries": n_recall_q,
+            "recall_epsilon_0.01": recall_eps2,
+            "recall_compute_dtype": a.dtype,
             "qps": m / best,
             "best_search_time_s": best,
             "search_time_s_all": res["times_s"],
