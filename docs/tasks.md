@@ -12,6 +12,8 @@ read_when: picking the next slice or checking status.
 - S4 harness + data: ann-benchmarks loader (`datasets.py`), roofline helpers, plots, Colab notebook, method doc.
 - Integration: `bench/run.py --dataset/--data-dir/--n-train/--n-test`, roofline fields in every record, `select_only` without matmul FLOP/s, `selection_over_matmul` (R5), blockwise and pallas_score charged for score-matrix HBM traffic.
 
+- S5 TPU run (2026-11-18, Colab v5e-1): results in `results/tpu/`, report in `docs/RESULTS.md`, `bench/summarize.py`, `bench/dump_lowered.py`, `bench/trace_ops.py`, `bench/profile_one.py`. Mosaic accepted the Pallas kernel; stage-split ratio measured (0.77x to 8.16x). Notebook fixes: device check and profiler run as subprocesses, browser User-Agent in `bench/download.py`.
+
 ## Next
-- S5: TPU run (Colab v5e-1). Check Mosaic acceptance of the (8, bn) aux block, default scoped VMEM, best bm/bn/bk, stage-split selection/matmul ratio.
+- S5b: rerun on TPU with `--sweep-blocks` (M 128, 1024), `approx_max_k` at recall targets 0.90 and 0.99, k=100, D in {96, 768}, GloVe-100, `--dump-hlo`. The block sweep decides whether the 6% vs 90% block-size claim shows up.
 - S6 stretch: V4 fused per-tile top-k kernel.

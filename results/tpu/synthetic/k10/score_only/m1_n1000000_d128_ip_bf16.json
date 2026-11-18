@@ -1,0 +1,90 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-11-18T13:33:58Z-52551c9",
+  "dataset": {
+    "name": "synthetic",
+    "source_url": null,
+    "n_train": 1000000,
+    "n_test": 1,
+    "dim": 128,
+    "distance": "ip",
+    "dtype_stored": "bf16",
+    "dtype_compute": "bf16",
+    "seed": 0,
+    "hash": "1d8f1c8e1f445c90"
+  },
+  "algorithm": {
+    "name": "score_only",
+    "params": {
+      "precision": "bf16"
+    },
+    "exact": true
+  },
+  "query": {
+    "k": 10,
+    "batch_size": 1,
+    "n_batches": 1,
+    "mode": "batch",
+    "n_queries_timed": 1,
+    "warmup_iters": 3,
+    "repetitions": 5
+  },
+  "hardware": {
+    "platform": "tpu",
+    "device_kind": "TPU v5 lite",
+    "n_devices": 1,
+    "host": "8d526688053e",
+    "jax_version": "0.12.0.1",
+    "jaxlib_version": "0.12.0.1",
+    "libtpu_version": "0.0.50",
+    "python": "3.13.18"
+  },
+  "metrics": {
+    "recall": null,
+    "recall_sampled_queries": null,
+    "recall_epsilon_0.01": null,
+    "recall_compute_dtype": "bf16",
+    "qps": 1740.916766385711,
+    "best_search_time_s": 0.0005744100001265906,
+    "search_time_s_all": [
+      0.0006066799999189243,
+      0.0005851299999903858,
+      0.0006061999999928958,
+      0.0005744100001265906,
+      0.0005899800000861433
+    ],
+    "latency_ms_per_batch": {
+      "min": 0.5744100001265906,
+      "p50": 0.5899800000861433,
+      "p95": 0.6065839999337186,
+      "p99": 0.6066607999218832,
+      "mean": 0.592480000022988
+    },
+    "latency_ms_per_query_amortized": 0.5744100001265906,
+    "compile_time_s": 0.1404967299999953,
+    "build_time_s": 0.0014313899998796842,
+    "index_size_bytes": 256000000,
+    "score_matrix_bytes": 4000000,
+    "bytes_moved": 260000512.0,
+    "arithmetic_intensity": 0.9846134456842915,
+    "roofline_label": "HBM-bound",
+    "selection_time_ms": 0.4447999999683816,
+    "matmul_time_ms": 0.5744100001265906,
+    "selection_over_matmul": 0.7743597776333193,
+    "flops_achieved": 445674692194.742,
+    "flops_peak": 197000000000000.0,
+    "percent_of_peak": 0.22623080822068123
+  },
+  "timing": {
+    "clock": "perf_counter",
+    "synchronized": "block_until_ready",
+    "includes_h2d_query_transfer": false,
+    "includes_d2h_result": false,
+    "xla_flags": ""
+  },
+  "git": {
+    "commit": "52551c9d02940beb633f986bf866e1c6c125f3be",
+    "dirty": false
+  },
+  "created_at": "2026-11-18T13:33:58Z"
+}

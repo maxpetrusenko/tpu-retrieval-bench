@@ -1,0 +1,90 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-11-18T13:31:43Z-52551c9",
+  "dataset": {
+    "name": "synthetic",
+    "source_url": null,
+    "n_train": 1000000,
+    "n_test": 16,
+    "dim": 128,
+    "distance": "ip",
+    "dtype_stored": "bf16",
+    "dtype_compute": "bf16",
+    "seed": 0,
+    "hash": "597675eca77a5cf6"
+  },
+  "algorithm": {
+    "name": "jit_matmul_topk",
+    "params": {
+      "precision": "bf16"
+    },
+    "exact": true
+  },
+  "query": {
+    "k": 10,
+    "batch_size": 16,
+    "n_batches": 1,
+    "mode": "batch",
+    "n_queries_timed": 16,
+    "warmup_iters": 3,
+    "repetitions": 5
+  },
+  "hardware": {
+    "platform": "tpu",
+    "device_kind": "TPU v5 lite",
+    "n_devices": 1,
+    "host": "8d526688053e",
+    "jax_version": "0.12.0.1",
+    "jaxlib_version": "0.12.0.1",
+    "libtpu_version": "0.0.50",
+    "python": "3.13.18"
+  },
+  "metrics": {
+    "recall": 1.0,
+    "recall_sampled_queries": 16,
+    "recall_epsilon_0.01": null,
+    "recall_compute_dtype": "bf16",
+    "qps": 13779.798814864651,
+    "best_search_time_s": 0.0011611200000061217,
+    "search_time_s_all": [
+      0.0012278000001515466,
+      0.0012452099999791244,
+      0.0011652700000013283,
+      0.0011611200000061217,
+      0.0011618800001542695
+    ],
+    "latency_ms_per_batch": {
+      "min": 1.1611200000061217,
+      "p50": 1.1652700000013283,
+      "p95": 1.2417280000136088,
+      "p99": 1.2445135999860213,
+      "mean": 1.192256000058478
+    },
+    "latency_ms_per_query_amortized": 0.0725700000003826,
+    "compile_time_s": 0.6748682730001292,
+    "build_time_s": 0.0014454699999078002,
+    "index_size_bytes": 256000000,
+    "score_matrix_bytes": 64000000,
+    "bytes_moved": 384009472.0,
+    "arithmetic_intensity": 10.666403562045469,
+    "roofline_label": "VPU/COP-bound",
+    "selection_time_ms": null,
+    "matmul_time_ms": null,
+    "selection_over_matmul": null,
+    "flops_achieved": 3527628496605.3506,
+    "flops_peak": 197000000000000.0,
+    "percent_of_peak": 1.7906743637590612
+  },
+  "timing": {
+    "clock": "perf_counter",
+    "synchronized": "block_until_ready",
+    "includes_h2d_query_transfer": false,
+    "includes_d2h_result": false,
+    "xla_flags": ""
+  },
+  "git": {
+    "commit": "52551c9d02940beb633f986bf866e1c6c125f3be",
+    "dirty": false
+  },
+  "created_at": "2026-11-18T13:31:43Z"
+}

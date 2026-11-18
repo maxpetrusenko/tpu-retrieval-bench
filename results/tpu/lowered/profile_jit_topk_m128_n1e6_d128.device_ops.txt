@@ -1,0 +1,6 @@
+[XLA Modules] jit__lambda(2986183382284932836): 6199.1 us | bytes_accessed=- | category=-
+    
+[XLA Ops] fusion: 1557.5 us | bytes_accessed=1024065536 | category=convolution fusion
+    %fusion = f32[128,1000000]{0,1:T(8,128)} fusion(f32[1000000,128]{1,0:T(8,128)} %e.1, f32[128,128]{1,0:T(8,128)} %q.1), kind=kOutput, calls=%fused_computation
+[XLA Ops] custom-call: 4641.4 us | bytes_accessed=512010240 | category=custom-call
+    %custom-call = (f32[128,10]{0,1:T(8,128)}, s32[128,10]{0,1:T(8,128)}) custom-call(f32[128,1000000]{0,1:T(8,128)} %fusion), custom_call_target="TopK", called_computations={%compare-greater-than.1}

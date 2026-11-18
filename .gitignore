@@ -11,3 +11,7 @@ results/**/*.npy
 results/**/*.npz
 results/**/*.bin
 results/**/*.hlo.txt
+# raw profiler traces are large; the committed one (55 KB) is kept, new ones stay local
+results/profile_*/**/*.xplane.pb
+results/profile_*/**/*.trace.json.gz
+!results/profile_jit_topk_m128_n1e6_d128/**

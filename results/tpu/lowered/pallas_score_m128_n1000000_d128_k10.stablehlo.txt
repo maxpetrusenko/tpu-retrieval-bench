@@ -1,0 +1,96 @@
+module @jit__lambda attributes {mhlo.num_partitions = 1 : i32, mhlo.num_replicas = 1 : i32} {
+  func.func public @main(%arg0: tensor<128x128xf32>, %arg1: tensor<15x65536x128xbf16>, %arg2: tensor<15x8x65536xf32>, %arg3: tensor<17408x128xbf16>, %arg4: tensor<8x17408xf32>) -> (tensor<128x10xf32> {jax.result_info = "result[0]"}, tensor<128x10xi32> {jax.result_info = "result[1]"}) {
+    %0 = stablehlo.convert %arg0 : (tensor<128x128xf32>) -> tensor<128x128xbf16>
+    %c = stablehlo.constant dense<0> : tensor<i32>
+    %1 = call @_pad(%0, %c) : (tensor<128x128xbf16>, tensor<i32>) -> tensor<128x128xbf16>
+    %cst = stablehlo.constant dense<0xFF800000> : tensor<f32>
+    %2 = stablehlo.broadcast_in_dim %cst, dims = [] : (tensor<f32>) -> tensor<128x10xf32>
+    %c_0 = stablehlo.constant dense<-1> : tensor<i32>
+    %3 = stablehlo.broadcast_in_dim %c_0, dims = [] : (tensor<i32>) -> tensor<128x10xi32>
+    %4 = stablehlo.iota dim = 0 : tensor<15xi32>
+    %c_1 = stablehlo.constant dense<65536> : tensor<i32>
+    %5 = stablehlo.broadcast_in_dim %c_1, dims = [] : (tensor<i32>) -> tensor<15xi32>
+    %6 = stablehlo.multiply %4, %5 : tensor<15xi32>
+    %c_2 = stablehlo.constant dense<0> : tensor<i32>
+    %7:7 = stablehlo.while(%iterArg = %arg1, %iterArg_6 = %arg2, %iterArg_7 = %6, %iterArg_8 = %1, %iterArg_9 = %c_2, %iterArg_10 = %2, %iterArg_11 = %3) : tensor<15x65536x128xbf16>, tensor<15x8x65536xf32>, tensor<15xi32>, tensor<128x128xbf16>, tensor<i32>, tensor<128x10xf32>, tensor<128x10xi32>
+    cond {
+      %c_12 = stablehlo.constant dense<15> : tensor<i32>
+      %14 = stablehlo.compare LT, %iterArg_9, %c_12, SIGNED : (tensor<i32>, tensor<i32>) -> tensor<i1>
+      stablehlo.return %14 : tensor<i1>
+    } do {
+      %14 = func.call @dynamic_index_in_dim(%iterArg, %iterArg_9) : (tensor<15x65536x128xbf16>, tensor<i32>) -> tensor<65536x128xbf16>
+      %15 = func.call @dynamic_index_in_dim_0(%iterArg_6, %iterArg_9) : (tensor<15x8x65536xf32>, tensor<i32>) -> tensor<8x65536xf32>
+      %16 = func.call @dynamic_index_in_dim_1(%iterArg_7, %iterArg_9) : (tensor<15xi32>, tensor<i32>) -> tensor<i32>
+      %17 = stablehlo.custom_call @tpu_custom_call(%iterArg_8, %14, %15) {backend_config = "{\22custom_call_config\22: {\22body\22: \22TUzvUgFNTElSMjQuMC4wZ2l0AAEzCQEDBQcBAwkDHwsNDxETFRcZGx0fISMlJwPjqSUBnQcTEwsLCwsLCwsPCyMLDw8LCwsLExMLGwsPSwsXCwtzCwsLCxsbC1MbC1MbC1MbC1MbGxsbDw8THysLCwsLEwsLUwsTEw8THxsPEx8TDwULYY2RTSoCBwNZASUPBx8HDwsHJycnIxsbLyMfHx8CAgsfAwMHbQMDB2sFKQUrBS0vEQUvBTENHRELAAUzAwd/FYGDhYcFNREJAREJBQU3BTkFOwU9AwMXHQMDFx8FPwMFMTMJGwVBEQk9AxE3OQs7PT9BHUMfCRtFo0dJBUMBB5+foQ0bBUUjCQcxAQAAAAAAAACAAAAAAAAAAAEAAAAAAAAABUcFSQVLBU0BCUtRV10DBQ9NEU8JISMJBSGAAAAAAAAAAIAAAAAAAAAAAwUPUxFVCSMjCQUhAAIAAAAAAACAAAAAAAAAAAMFD1kRWwklIwkFIQgAAAAAAAAAAAIAAAAAAAADBQ9fEWEJJyMJBSGAAAAAAAAAAAACAAAAAAAAAwULEwkhAwULEwkjAwULEwklAwULEwknEQEBEQMBAwMHcSUFCQAAAAADCXWldxV5FXsVBU8FUQVTBVUDAy2nBVcFWSMBCSEBAAAAAQAAAAIAAAAAAAAABVsjAQEBAwMHixEDBQMDB48TBxAAAMAPAwUtpxeTEQkJAwMHlxMHEAAA4D8DAwebEwcBI3RwdS5tZW1vcnlfc3BhY2U8dm1lbT4AI3RwdS5kaW1lbnNpb25fc2VtYW50aWNzPHBhcmFsbGVsPgAjdHB1LmRpbWVuc2lvbl9zZW1hbnRpY3M8YXJiaXRyYXJ5PgAjdHB1LmNvcmVfdHlwZTx0Yz4AI3RwdS5kb3RfZGltZW5zaW9uX251bWJlcnM8WzFdLCBbMV0sIFswXSwgWzBdLCBbMCwgMCwgMSwgMF0sIFtdLCBbXT4AI2FyaXRoLmZhc3RtYXRoPG5vbmU+AAECAgMnBQIEAhAHCwECBAEJBxedBQIEAhAHDRedBQIEAgQNDRedBQIQAgQNDRedBSECEAcNJwUFAhAHJwUFAhALBREBAQERExUPDwEFBwEBAQUBAScFAgQCBA0nBQIQAgQNJwUCBAIQCwSiCAUBEQEvBwMBFQcRATUHA0N3EQEBAQEBAREBEwEVAQ8BDwEDAwEFAwELBwEpAwsFBRETBgEDAQMTAwMBBQMBCwcBKwMLBRUXFRQBAxkJAwsdAwMBmQMHDwYBAwUDQwMDAQMDAwMDAQMDAwUGAQMFBw9HSREFARkJRQ9HSQ0AAQMBBQ0AAQMDAQMDAwMDAQMDAwUGAQMFBw8bHQMDAQMDAwMDAQMDAwUGAQMfBwchIwMDAQMDAwMDAQMDAwUGAQMhBwknKQMDAW8DBRcHAXMDBQclKy0ZBwF9AwUFHy8DAwEDAwMDAwEDAwMFBgEDBQcPMzURBQEZCTEPMzUDAwEFAwELBwEpAwsFBTkTBgEDAQM7AwMBBQMBCwcBKwMLBT0/FRQBA0EJAyNNAwMBAwMDAwMBAwMDBQYBAwUHD0NFAwMBiQMDAwMBAwMDBQYBAxcHC0lLAwMBjQMHDwYBAxcDTxsHAZEDGQVNUQMDAZUDBx0GAQMZA1MPBgEDIwNXDwYBAwUDVR8GAQMFB1lHWwMDAQMDAwMDAQMDAwUGAQMFBw1fYREFARkJXQ1fYQ0AAQMBBQ0AAQkAAQcRAWMHAwkLBwEBAQEBAQMDAQUDAQkEAQUBBQcRAWUHAwkLBwEBAQEBAQMDAQUDAQkEAQUDBQcRAWcHAwsPBwEBAQEBAQMDAQUDAQMDAQUDAQkEAQUHAwcRAWkHAwkLBwEBAQEBAQMDAQUDAQkEAQUBAwYDAQUBAMoJXREpCR0nHSUdHSMhIyktExkZGRkRFR0lHRMNGyUXFxcPGSMjFRcZFRkfDw0JHRFidWlsdGluAHN0YWJsZV9tb3NhaWMAdHB1AGFyaXRoAG1vZHVsZQBhcml0aC5jb25zdGFudAB2ZWN0b3IubG9hZABmdW5jLmZ1bmMAZnVuYy5yZXR1cm4AYXJpdGguY21waQBzY2YueWllbGQAdmVjdG9yLmJyb2FkY2FzdAB0cHUudmVjdG9yX3N0b3JlAGFyaXRoLmV4dHVpAHNjZi5pZgB0cHUubWF0bXVsAGFyaXRoLmFkZGYAYXJpdGguY21wZgB2ZWN0b3Iuc2hhcGVfY2FzdABhcml0aC5zZWxlY3QAdmFsdWUAc3ltX25hbWUAZnVuY3Rpb25fdHlwZQB0cmFuc2Zvcm1faW5kaWNlcwB3aW5kb3dfYm91bmRzAHByZWRpY2F0ZQBfa2VybmVsAHRyYW5zZm9ybV8wAHRyYW5zZm9ybV8xAHRyYW5zZm9ybV8yAHRyYW5zZm9ybV8zAGZhc3RtYXRoAHN0YWJsZV9tb3NhaWMudmVyc2lvbgBkaW1lbnNpb25fc2VtYW50aWNzAGl0ZXJhdGlvbl9ib3VuZHMAc2NhbGFyX3ByZWZldGNoAHNjcmF0Y2hfb3BlcmFuZHMAdHB1LmNvcmVfdHlwZQB3aW5kb3dfcGFyYW1zAGRpbWVuc2lvbl9udW1iZXJzAHRyYW5zcG9zZV9saHMAdHJhbnNwb3NlX2xoc19oaW50AHRyYW5zcG9zZV9yaHMAYWRkAG9wZXJhbmRTZWdtZW50U2l6ZXMAc3RyaWRlcwA=\22, \22serialization_format\22: 1, \22needs_layout_passes\22: true, \22debug_locations\22: \22TUzvUgFNTElSMjQuMC4wZ2l0AAELAwEBAwMDVgI6AgEBOgIHCwsLDwsLDwsPDwsPDw8PEwsLCw8PDw8PDw8LCwsLCwsPDw8PDw8PDwsPExMTCwYDDwsPCw8LDwsPCw8PGw8PDw8PDxsPDw8LGw8PDw8PGw8PGw8PGw8PGwsPCw8fDwsPCw8fDw8PDxsPDw8PDw8bDw8PDxsPDxsPDwsbDwsPEwsXCxMbDxMPFwsTCxMPGwKKCB8FBQUHBQkdP4kFCwUNHT/fBQ8dBXkdBYcFER0HkR0lmR0Fox0lxx0lLgIFEwUVBRcdB50dC58dC6UdC6sdC+EdC+kdB/UFGQUbBR0FHwUhBSMdBakdBa8dsbMdBbkdBcUdBc8dBd0dB+0FJR1T9x0XEgIdBzYCAwNdXwUnAbkBAQEBAWFlaW1xdXuBCQkJi5MbGxsbCQkrKystLS0vLy9HR7sfHx8fy9HXDw8PMTExMzMz71VV/VdXFgIeAiEhISEPDwEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBHWMBBSkdZwEFKx1rAQUtHW8BBS8dcwEFMR0Rdx03Ey0DB0UbKR0RfR05fxUTEx07gx09hRUVFS0DB0ULKx1BFR0XjR2PGQUzLQMHSS9dHReVHSOXFRkZHSebFSkpLQMHSREpHQ2hFR0dLQMHTQkhHQ2nFUNDLQMHTxElHQ2tFUVFLQMHTyk9BTUdtbcFNxVJSS0DCU0pUQsdvb8FOR3BwwU7FUtLLQMJTQlRCx0nyRUpHR0RzR03TS0DB1UbMx0R0x051RUTTR072R092xUVTy0DB1ULNR1BTx0N4xUd5R0H5y0DB1kZMR0N6xVRUS0DB18/XR1T8R3zNQU9LQMHXz9pHfn7BT8VNTUd/wICBUEdBgIKAgVDHQcOAi0DB18rhR0jAR0XGgIdIxkdIgImAgVFHSoCAQVHHScyAhVZWS0DB18RJQQTBQERAVsHAwEBBgMBBQEAsgdJJRUJCw0HEQsxGyMRDRENDRMJCw1VLQ0HFQ1FJQkRCycRqQ8RYnVpbHRpbgBtb2R1bGUAL1VzZXJzL21heHNtYWNtaW5pL1Byb2plY3RzL3RwdS1yZXRyaWV2YWwtYmVuY2gtcmVzdWx0cy9zcmMvdHJiZW5jaC9wYWxsYXNfc2NvcmUucHkAX2tlcm5lbABfa2VybmVsLjxsb2NhbHM+Ll8AZ2V0OgBnZXQvZ2V0AGVxOgBicm9hZGNhc3RfaW5fZGltOgBicm9hZGNhc3RfaW5fZGltL2Jyb2FkY2FzdF9pbl9kaW0Ac3dhcDoAc3dhcC9zd2FwAGVxAGVxL2VxAGNvbnZlcnRfZWxlbWVudF90eXBlOgBjb252ZXJ0X2VsZW1lbnRfdHlwZS9jb252ZXJ0X2VsZW1lbnRfdHlwZQBjb25kOgBjb25kAGd0OgB0cHUubG9jcwBxX3JlZgBlX3JlZgBhdXhfcmVmAG9fcmVmAGFjY19yZWYAYnJvYWRjYXN0X2luX2RpbQBkb3RfZ2VuZXJhbDoAZG90X2dlbmVyYWwvZG90X2dlbmVyYWwAYWRkOgBhZGQvYWRkAGd0AGd0L2d0AGppdDoAaml0AHNlbGVjdF9uOgBzZWxlY3Rfbi9zZWxlY3RfbgA=\22}}", kernel_name = "_kernel", mhlo.frontend_attributes = {kernel_metadata = "{}"}, operand_layouts = [dense<[1, 0]> : tensor<2xindex>, dense<[1, 0]> : tensor<2xindex>, dense<[1, 0]> : tensor<2xindex>], result_layouts = [dense<[1, 0]> : tensor<2xindex>]} : (tensor<128x128xbf16>, tensor<65536x128xbf16>, tensor<8x65536xf32>) -> tensor<128x65536xf32>
+      %values_12, %indices_13 = chlo.top_k(%17, k = 10) : tensor<128x65536xf32> -> (tensor<128x10xf32>, tensor<128x10xi32>)
+      %18 = stablehlo.broadcast_in_dim %16, dims = [] : (tensor<i32>) -> tensor<128x10xi32>
+      %19 = stablehlo.add %indices_13, %18 : tensor<128x10xi32>
+      %20 = stablehlo.concatenate %iterArg_10, %values_12, dim = 1 : (tensor<128x10xf32>, tensor<128x10xf32>) -> tensor<128x20xf32>
+      %21 = stablehlo.concatenate %iterArg_11, %19, dim = 1 : (tensor<128x10xi32>, tensor<128x10xi32>) -> tensor<128x20xi32>
+      %values_14, %indices_15 = chlo.top_k(%20, k = 10) : tensor<128x20xf32> -> (tensor<128x10xf32>, tensor<128x10xi32>)
+      %22 = func.call @take_along_axis(%21, %indices_15) : (tensor<128x20xi32>, tensor<128x10xi32>) -> tensor<128x10xi32>
+      %c_16 = stablehlo.constant dense<1> : tensor<i32>
+      %23 = stablehlo.add %iterArg_9, %c_16 : tensor<i32>
+      stablehlo.return %iterArg, %iterArg_6, %iterArg_7, %iterArg_8, %23, %values_14, %22 : tensor<15x65536x128xbf16>, tensor<15x8x65536xf32>, tensor<15xi32>, tensor<128x128xbf16>, tensor<i32>, tensor<128x10xf32>, tensor<128x10xi32>
+    }
+    %8 = stablehlo.custom_call @tpu_custom_call(%1, %arg3, %arg4) {backend_config = "{\22custom_call_config\22: {\22body\22: \22TUzvUgFNTElSMjQuMC4wZ2l0AAEzCQEDBQcBAwkDHwsNDxETFRcZGx0fISMlJwPjqSUBnQcTEwsLCwsLCwsPCyMLDw8LCwsLExMLGwsPSwsXCwtzCwsLCxsbC1MbC1MbC1MbC1MbGxsbDw8THysLCwsLEwsLUwsTEw8THxsPEx8TDwULYY2RTSoCBwNZASUPBx8HDwsHJycnIxsbLyMfHx8CAgsfAwMHbQMDB2sFKQUrBS0vEQUvBTENHRELAAUzAwd/FYGDhYcFNREJAREJBQU3BTkFOwU9AwMXHQMDFx8FPwMFMTMJGwVBEQk9AxE3OQs7PT9BHUMfCRtFo0dJBUMBB5+foQ0bBUUjCQcxAQAAAAAAAAAiAAAAAAAAAAEAAAAAAAAABUcFSQVLBU0BCUtRV10DBQ9NEU8JISMJBSGAAAAAAAAAAIAAAAAAAAAAAwUPUxFVCSMjCQUhAAIAAAAAAACAAAAAAAAAAAMFD1kRWwklIwkFIQgAAAAAAAAAAAIAAAAAAAADBQ9fEWEJJyMJBSGAAAAAAAAAAAACAAAAAAAAAwULEwkhAwULEwkjAwULEwklAwULEwknEQEBEQMBAwMHcSUFCQAAAAADCXWldxV5FXsVBU8FUQVTBVUDAy2nBVcFWSMBCSEBAAAAAQAAAAIAAAAAAAAABVsjAQEBAwMHixEDBQMDB48TBxAAAMAPAwUtpxeTEQkJAwMHlxMHEAAA4D8DAwebEwcBI3RwdS5tZW1vcnlfc3BhY2U8dm1lbT4AI3RwdS5kaW1lbnNpb25fc2VtYW50aWNzPHBhcmFsbGVsPgAjdHB1LmRpbWVuc2lvbl9zZW1hbnRpY3M8YXJiaXRyYXJ5PgAjdHB1LmNvcmVfdHlwZTx0Yz4AI3RwdS5kb3RfZGltZW5zaW9uX251bWJlcnM8WzFdLCBbMV0sIFswXSwgWzBdLCBbMCwgMCwgMSwgMF0sIFtdLCBbXT4AI2FyaXRoLmZhc3RtYXRoPG5vbmU+AAECAgMnBQIEAhAHCwECBAEJBxedBQIEAhAHDRedBQIEAgQNDRedBQIQAgQNDRedBSECEAcNJwUFAhAHJwUFAhALBREBAQERExUPDwEFBwEBAQUBAScFAgQCBA0nBQIQAgQNJwUCBAIQCwSiCAUBEQEvBwMBFQcRATUHA0N3EQEBAQEBAREBEwEVAQ8BDwEDAwEFAwELBwEpAwsFBRETBgEDAQMTAwMBBQMBCwcBKwMLBRUXFRQBAxkJAwsdAwMBmQMHDwYBAwUDQwMDAQMDAwMDAQMDAwUGAQMFBw9HSREFARkJRQ9HSQ0AAQMBBQ0AAQMDAQMDAwMDAQMDAwUGAQMFBw8bHQMDAQMDAwMDAQMDAwUGAQMfBwchIwMDAQMDAwMDAQMDAwUGAQMhBwknKQMDAW8DBRcHAXMDBQclKy0ZBwF9AwUFHy8DAwEDAwMDAwEDAwMFBgEDBQcPMzURBQEZCTEPMzUDAwEFAwELBwEpAwsFBTkTBgEDAQM7AwMBBQMBCwcBKwMLBT0/FRQBA0EJAyNNAwMBAwMDAwMBAwMDBQYBAwUHD0NFAwMBiQMDAwMBAwMDBQYBAxcHC0lLAwMBjQMHDwYBAxcDTxsHAZEDGQVNUQMDAZUDBx0GAQMZA1MPBgEDIwNXDwYBAwUDVR8GAQMFB1lHWwMDAQMDAwMDAQMDAwUGAQMFBw1fYREFARkJXQ1fYQ0AAQMBBQ0AAQkAAQcRAWMHAwkLBwEBAQEBAQMDAQUDAQkEAQUBBQcRAWUHAwkLBwEBAQEBAQMDAQUDAQkEAQUDBQcRAWcHAwsPBwEBAQEBAQMDAQUDAQMDAQUDAQkEAQUHAwcRAWkHAwkLBwEBAQEBAQMDAQUDAQkEAQUBAwYDAQUBAMoJXREpCR0nHSUdHSMhIyktExkZGRkRFR0lHRMNGyUXFxcPGSMjFRcZFRkfDw0JHRFidWlsdGluAHN0YWJsZV9tb3NhaWMAdHB1AGFyaXRoAG1vZHVsZQBhcml0aC5jb25zdGFudAB2ZWN0b3IubG9hZABmdW5jLmZ1bmMAZnVuYy5yZXR1cm4AYXJpdGguY21waQBzY2YueWllbGQAdmVjdG9yLmJyb2FkY2FzdAB0cHUudmVjdG9yX3N0b3JlAGFyaXRoLmV4dHVpAHNjZi5pZgB0cHUubWF0bXVsAGFyaXRoLmFkZGYAYXJpdGguY21wZgB2ZWN0b3Iuc2hhcGVfY2FzdABhcml0aC5zZWxlY3QAdmFsdWUAc3ltX25hbWUAZnVuY3Rpb25fdHlwZQB0cmFuc2Zvcm1faW5kaWNlcwB3aW5kb3dfYm91bmRzAHByZWRpY2F0ZQBfa2VybmVsAHRyYW5zZm9ybV8wAHRyYW5zZm9ybV8xAHRyYW5zZm9ybV8yAHRyYW5zZm9ybV8zAGZhc3RtYXRoAHN0YWJsZV9tb3NhaWMudmVyc2lvbgBkaW1lbnNpb25fc2VtYW50aWNzAGl0ZXJhdGlvbl9ib3VuZHMAc2NhbGFyX3ByZWZldGNoAHNjcmF0Y2hfb3BlcmFuZHMAdHB1LmNvcmVfdHlwZQB3aW5kb3dfcGFyYW1zAGRpbWVuc2lvbl9udW1iZXJzAHRyYW5zcG9zZV9saHMAdHJhbnNwb3NlX2xoc19oaW50AHRyYW5zcG9zZV9yaHMAYWRkAG9wZXJhbmRTZWdtZW50U2l6ZXMAc3RyaWRlcwA=\22, \22serialization_format\22: 1, \22needs_layout_passes\22: true, \22debug_locations\22: \22TUzvUgFNTElSMjQuMC4wZ2l0AAELAwEBAwMDVgI6AgEBOgIHCwsLDwsLDwsPDwsPDw8PEwsLCw8PDw8PDw8LCwsLCwsPDw8PDw8PDwsPExMTCwYDDwsPCw8LDwsPCw8PGw8PDw8PDxsPDw8LGw8PDw8PGw8PGw8PGw8PGwsPCw8fDwsPCw8fDw8PDxsPDw8PDw8bDw8PDxsPDxsPDwsbDwsPEwsXCxMbDxMPFwsTCxMPGwKKCB8FBQUHBQkdP4kFCwUNHT/fBQ8dBXkdBYcFER0HkR0lmR0Fox0lxx0lLgIFEwUVBRcdB50dC58dC6UdC6sdC+EdC+kdB/UFGQUbBR0FHwUhBSMdBakdBa8dsbMdBbkdBcUdBc8dBd0dB+0FJR1T9x0XEgIdBzYCAwNdXwUnAbkBAQEBAWFlaW1xdXuBCQkJi5MbGxsbCQkrKystLS0vLy9HR7sfHx8fy9HXDw8PMTExMzMz71VV/VdXFgIeAiEhISEPDwEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBHWMBBSkdZwEFKx1rAQUtHW8BBS8dcwEFMR0Rdx03Ey0DB0UbKR0RfR05fxUTEx07gx09hRUVFS0DB0ULKx1BFR0XjR2PGQUzLQMHSS9dHReVHSOXFRkZHSebFSkpLQMHSREpHQ2hFR0dLQMHTQkhHQ2nFUNDLQMHTxElHQ2tFUVFLQMHTyk9BTUdtbcFNxVJSS0DCU0pUQsdvb8FOR3BwwU7FUtLLQMJTQlRCx0nyRUpHR0RzR03TS0DB1UbMx0R0x051RUTTR072R092xUVTy0DB1ULNR1BTx0N4xUd5R0H5y0DB1kZMR0N6xVRUS0DB18/XR1T8R3zNQU9LQMHXz9pHfn7BT8VNTUd/wICBUEdBgIKAgVDHQcOAi0DB18rhR0jAR0XGgIdIxkdIgImAgVFHSoCAQVHHScyAhVZWS0DB18RJQQTBQERAVsHAwEBBgMBBQEAsgdJJRUJCw0HEQsxGyMRDRENDRMJCw1VLQ0HFQ1FJQkRCycRqQ8RYnVpbHRpbgBtb2R1bGUAL1VzZXJzL21heHNtYWNtaW5pL1Byb2plY3RzL3RwdS1yZXRyaWV2YWwtYmVuY2gtcmVzdWx0cy9zcmMvdHJiZW5jaC9wYWxsYXNfc2NvcmUucHkAX2tlcm5lbABfa2VybmVsLjxsb2NhbHM+Ll8AZ2V0OgBnZXQvZ2V0AGVxOgBicm9hZGNhc3RfaW5fZGltOgBicm9hZGNhc3RfaW5fZGltL2Jyb2FkY2FzdF9pbl9kaW0Ac3dhcDoAc3dhcC9zd2FwAGVxAGVxL2VxAGNvbnZlcnRfZWxlbWVudF90eXBlOgBjb252ZXJ0X2VsZW1lbnRfdHlwZS9jb252ZXJ0X2VsZW1lbnRfdHlwZQBjb25kOgBjb25kAGd0OgB0cHUubG9jcwBxX3JlZgBlX3JlZgBhdXhfcmVmAG9fcmVmAGFjY19yZWYAYnJvYWRjYXN0X2luX2RpbQBkb3RfZ2VuZXJhbDoAZG90X2dlbmVyYWwvZG90X2dlbmVyYWwAYWRkOgBhZGQvYWRkAGd0AGd0L2d0AGppdDoAaml0AHNlbGVjdF9uOgBzZWxlY3Rfbi9zZWxlY3RfbgA=\22}}", kernel_name = "_kernel", mhlo.frontend_attributes = {kernel_metadata = "{}"}, operand_layouts = [dense<[1, 0]> : tensor<2xindex>, dense<[1, 0]> : tensor<2xindex>, dense<[1, 0]> : tensor<2xindex>], result_layouts = [dense<[1, 0]> : tensor<2xindex>]} : (tensor<128x128xbf16>, tensor<17408x128xbf16>, tensor<8x17408xf32>) -> tensor<128x17408xf32>
+    %values, %indices = chlo.top_k(%8, k = 10) : tensor<128x17408xf32> -> (tensor<128x10xf32>, tensor<128x10xi32>)
+    %c_3 = stablehlo.constant dense<983040> : tensor<i32>
+    %9 = stablehlo.broadcast_in_dim %c_3, dims = [] : (tensor<i32>) -> tensor<128x10xi32>
+    %10 = stablehlo.add %indices, %9 : tensor<128x10xi32>
+    %11 = stablehlo.concatenate %7#5, %values, dim = 1 : (tensor<128x10xf32>, tensor<128x10xf32>) -> tensor<128x20xf32>
+    %12 = stablehlo.concatenate %7#6, %10, dim = 1 : (tensor<128x10xi32>, tensor<128x10xi32>) -> tensor<128x20xi32>
+    %values_4, %indices_5 = chlo.top_k(%11, k = 10) : tensor<128x20xf32> -> (tensor<128x10xf32>, tensor<128x10xi32>)
+    %13 = call @take_along_axis(%12, %indices_5) : (tensor<128x20xi32>, tensor<128x10xi32>) -> tensor<128x10xi32>
+    return %values_4, %13 : tensor<128x10xf32>, tensor<128x10xi32>
+  }
+  func.func private @_pad(%arg0: tensor<128x128xbf16>, %arg1: tensor<i32>) -> tensor<128x128xbf16> {
+    %0 = stablehlo.convert %arg1 : (tensor<i32>) -> tensor<bf16>
+    %1 = stablehlo.pad %arg0, %0, low = [0, 0], high = [0, 0], interior = [0, 0] : (tensor<128x128xbf16>, tensor<bf16>) -> tensor<128x128xbf16>
+    return %1 : tensor<128x128xbf16>
+  }
+  func.func private @dynamic_index_in_dim(%arg0: tensor<15x65536x128xbf16>, %arg1: tensor<i32>) -> tensor<65536x128xbf16> {
+    %c = stablehlo.constant dense<0> : tensor<i32>
+    %c_0 = stablehlo.constant dense<0> : tensor<i32>
+    %0 = stablehlo.dynamic_slice %arg0, %arg1, %c, %c_0, sizes = [1, 65536, 128] : (tensor<15x65536x128xbf16>, tensor<i32>, tensor<i32>, tensor<i32>) -> tensor<1x65536x128xbf16>
+    %1 = stablehlo.reshape %0 : (tensor<1x65536x128xbf16>) -> tensor<65536x128xbf16>
+    return %1 : tensor<65536x128xbf16>
+  }
+  func.func private @dynamic_index_in_dim_0(%arg0: tensor<15x8x65536xf32>, %arg1: tensor<i32>) -> tensor<8x65536xf32> {
+    %c = stablehlo.constant dense<0> : tensor<i32>
+    %c_0 = stablehlo.constant dense<0> : tensor<i32>
+    %0 = stablehlo.dynamic_slice %arg0, %arg1, %c, %c_0, sizes = [1, 8, 65536] : (tensor<15x8x65536xf32>, tensor<i32>, tensor<i32>, tensor<i32>) -> tensor<1x8x65536xf32>
+    %1 = stablehlo.reshape %0 : (tensor<1x8x65536xf32>) -> tensor<8x65536xf32>
+    return %1 : tensor<8x65536xf32>
+  }
+  func.func private @dynamic_index_in_dim_1(%arg0: tensor<15xi32>, %arg1: tensor<i32>) -> tensor<i32> {
+    %0 = stablehlo.dynamic_slice %arg0, %arg1, sizes = [1] : (tensor<15xi32>, tensor<i32>) -> tensor<1xi32>
+    %1 = stablehlo.reshape %0 : (tensor<1xi32>) -> tensor<i32>
+    return %1 : tensor<i32>
+  }
+  func.func private @take_along_axis(%arg0: tensor<128x20xi32>, %arg1: tensor<128x10xi32>) -> tensor<128x10xi32> {
+    %c = stablehlo.constant dense<0> : tensor<i32>
+    %0 = stablehlo.broadcast_in_dim %c, dims = [] : (tensor<i32>) -> tensor<128x10xi32>
+    %1 = stablehlo.compare LT, %arg1, %0, SIGNED : (tensor<128x10xi32>, tensor<128x10xi32>) -> tensor<128x10xi1>
+    %c_0 = stablehlo.constant dense<20> : tensor<i32>
+    %2 = stablehlo.broadcast_in_dim %c_0, dims = [] : (tensor<i32>) -> tensor<128x10xi32>
+    %3 = stablehlo.add %arg1, %2 : tensor<128x10xi32>
+    %4 = stablehlo.select %1, %3, %arg1 : tensor<128x10xi1>, tensor<128x10xi32>
+    %5 = stablehlo.reshape %4 : (tensor<128x10xi32>) -> tensor<128x10x1xi32>
+    %c_1 = stablehlo.constant dense<19> : tensor<1xi32>
+    %c_2 = stablehlo.constant dense<0> : tensor<i32>
+    %6 = stablehlo.broadcast_in_dim %c_2, dims = [] : (tensor<i32>) -> tensor<128x10x1xi32>
+    %7 = stablehlo.compare GE, %5, %6, SIGNED : (tensor<128x10x1xi32>, tensor<128x10x1xi32>) -> tensor<128x10x1xi1>
+    %8 = stablehlo.broadcast_in_dim %c_1, dims = [2] : (tensor<1xi32>) -> tensor<1x1x1xi32>
+    %9 = stablehlo.broadcast_in_dim %8, dims = [0, 1, 2] : (tensor<1x1x1xi32>) -> tensor<128x10x1xi32>
+    %10 = stablehlo.compare LE, %5, %9, SIGNED : (tensor<128x10x1xi32>, tensor<128x10x1xi32>) -> tensor<128x10x1xi1>
+    %11 = stablehlo.and %7, %10 : tensor<128x10x1xi1>
+    %c_3 = stablehlo.constant dense<true> : tensor<i1>
+    %12 = stablehlo.reduce(%11 init: %c_3) applies stablehlo.and across dimensions = [2] : (tensor<128x10x1xi1>, tensor<i1>) -> tensor<128x10xi1>
+    %13 = "stablehlo.gather"(%arg0, %5) <{dimension_numbers = #stablehlo.gather<collapsed_slice_dims = [1], operand_batching_dims = [0], start_indices_batching_dims = [0], start_index_map = [1], index_vector_dim = 2>, indices_are_sorted = false, slice_sizes = array<i64: 1, 1>}> : (tensor<128x20xi32>, tensor<128x10x1xi32>) -> tensor<128x10xi32>
+    %c_4 = stablehlo.constant dense<-2147483648> : tensor<i32>
+    %14 = stablehlo.broadcast_in_dim %c_4, dims = [] : (tensor<i32>) -> tensor<128x10xi32>
+    %15 = stablehlo.select %12, %13, %14 : tensor<128x10xi1>, tensor<128x10xi32>
+    return %15 : tensor<128x10xi32>
+  }
+}
