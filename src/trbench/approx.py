@@ -6,13 +6,13 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
-from trbench._common import dense_scores, prepare_dense
+from trbench._common import dense_scores, mark_invalid, prepare_dense
 
 
 def approx_search(queries, idx, *, k, metric, compute_dtype, recall_target):
     s = dense_scores(queries, idx, metric=metric, compute_dtype=compute_dtype)
     v, i = lax.approx_max_k(s, k, recall_target=recall_target)
-    return v, i.astype(jnp.int32)
+    return mark_invalid(v, i.astype(jnp.int32))
 
 
 def make_approx_parts(k, *, recall_target=0.95, metric="ip", compute_dtype=jnp.bfloat16):

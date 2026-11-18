@@ -1,4 +1,4 @@
-"""V0: float64 NumPy oracle. Ties: lower id wins."""
+"""V0: float64 NumPy oracle. Ties: lower id wins. Invalid tail slots: id -1, score -inf."""
 
 from __future__ import annotations
 
@@ -34,4 +34,5 @@ def numpy_ref(queries, db, k, *, metric="ip", mask=None, compute_dtype=None):
     # stable sort on negated scores keeps lower id first among ties
     ids = np.argsort(-s, axis=1, kind="stable")[:, :k]
     top = np.take_along_axis(s, ids, axis=1)
+    ids = np.where(np.isneginf(top), -1, ids)  # invalid slots: id -1, score -inf
     return top.astype(np.float32), ids.astype(np.int32)
