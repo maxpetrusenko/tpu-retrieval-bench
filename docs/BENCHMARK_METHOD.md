@@ -24,8 +24,17 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 2. Warmup >= 3 calls, then >= 5 timed repetitions; every call ends with `block_until_ready` before the clock stops.
 3. Database and queries are resident on device. Host-to-device query transfer and device-to-host result copy are excluded; each record states this in its `timing` block.
 4. Headline QPS = M / min(time). Latency fields come from per-batch repetitions (p50/p95/p99), so with 5 repetitions p99 is effectively the max. Say so when quoting it.
-5. Where available, device time from a `jax.profiler` trace is reported next to wall time; wall time includes dispatch.
+5. Device time next to wall time: `--device-time` traces `--reps` warm calls with `jax.profiler` and sums the `XLA Modules` events of the first `/device:` plane (parsed offline with `jax.profiler.ProfileData`, no TensorBoard). First batch only. Off TPU/GPU the trace has no device plane: `device_time_ms` is null and `device_time_note` says why. Wall time includes dispatch.
 6. One chip, one process. Record chip kind, jax/jaxlib/libtpu versions, XLA flags, seed, dataset hash, git commit and dirty flag (R10).
+
+### 2.1 Timing lanes (`bench/run.py`)
+
+`--timing wall|loop|both` (default `wall`). Record fields: `timing.mode`, `timing.headline`, `timing.loop_iters`, `timing.loop_checksum`; metrics `best_search_time_s_wall`, `best_search_time_s_loop`, `qps_wall`, `qps_loop`, `latency_ms_per_batch_loop`, `search_time_s_all_loop`. `best_search_time_s` and `qps` follow the headline: wall for `wall` and `both`, loop for `loop`.
+
+- **wall**: one call, `block_until_ready`, clock stops. Includes Python dispatch; on small shapes that is most of the number (tokamax `docs/benchmarking.md`).
+- **loop**: the search runs `--loop-iters` (default 16) times inside one jitted `lax.fori_loop`, one host dispatch per rep; reported time = rep time / iters, summed over batches per pass. Anti-hoisting: each iteration's inputs pass through `lax.optimization_barrier` together with the running checksum (iteration i+1 depends on iteration i), and the carry is the sum of every output leaf, so XLA can neither hoist/CSE the body nor drop it. Cost: one reduction over the outputs per iteration, visible for `score_only` (output is the full M x N matrix), so compare stage splits within one lane only. Tests assert the per-dispatch time grows with the iteration count. Pattern: triton `do_bench_cudagraph` (unrolled burst, divided); no code copied. Loop and wall numbers are the same compute; the gap is dispatch overhead. Long bursts can thermally throttle; keep iters modest.
+- **serial** (`--serial N`): VectorDBBench `serial_latency_*` style. N queries (cycling the query pool), batch 1, concurrency 1, each ended by `block_until_ready`. Records `serial_latency_ms` (p50/p95/p99/min/mean), `serial_n`, `serial_qps` (1 / mean). Use N >= 100 so p99 is meaningful; p99 of N < 100 is the max. Separate from batched QPS; never compare the two.
+- Device time lane: see rule 5. Not usable on the Mac mini or CI (CPU); verify on the TPU before quoting it.
 
 ## 3. Recall definitions
 
