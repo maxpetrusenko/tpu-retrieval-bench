@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import shutil
 import sys
 import urllib.request
 from pathlib import Path
@@ -11,6 +12,11 @@ from pathlib import Path
 from trbench.datasets import DATA_DIR, DATASETS
 
 URL = "http://ann-benchmarks.com/{}.hdf5"
+# ann-benchmarks.com answered HTTP 403 to the default Python-urllib agent (Colab, 2026-11-18).
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0 Safari/537.36"
+)
 ALIASES = {"sift": "sift-128-euclidean", "glove": "glove-100-angular", "gist": "gist-960-euclidean"}
 
 
@@ -20,6 +26,13 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def download(url: str, dest: Path) -> None:
+    """Stream url to dest with a browser-like User-Agent."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req) as resp, dest.open("wb") as f:
+        shutil.copyfileobj(resp, f, 1 << 20)
 
 
 def fetch(name: str, out: Path) -> Path:
@@ -34,7 +47,7 @@ def fetch(name: str, out: Path) -> Path:
         out.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(".part")
         print(f"downloading {URL.format(name)} -> {dest}")
-        urllib.request.urlretrieve(URL.format(name), tmp)
+        download(URL.format(name), tmp)
         got = tmp.stat().st_size
         if got != expected:
             tmp.unlink()

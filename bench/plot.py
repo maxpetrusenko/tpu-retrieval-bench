@@ -52,8 +52,9 @@ def group_key(r):
             r["algorithm"]["params"].get("precision", ds.get("dtype_compute")))
 
 
-def group_tag(key):
-    return "_".join(str(x) for x in key)
+def group_tag(key, kind):
+    """File stem: platform first (tpu_..., cpu_...), then plot kind, then the rest of the key."""
+    return "_".join([str(key[0]), kind, *(str(x) for x in key[1:])])
 
 
 def group_title(key):
@@ -112,7 +113,7 @@ def plot_recall_qps(key, recs, cm, out):
     h, lb = ax.get_legend_handles_labels()
     uniq = dict(zip(lb, h, strict=True))
     ax.legend(uniq.values(), uniq.keys(), frameon=False, fontsize=8)
-    return save(fig, out, f"recall_qps_{group_tag(key)}.png")
+    return save(fig, out, f"{group_tag(key, 'recall_qps')}.png")
 
 
 def plot_batch(key, recs, cm, out):
@@ -132,7 +133,7 @@ def plot_batch(key, recs, cm, out):
         ax.set_ylabel(yl)
     a1.legend(frameon=False, fontsize=8)
     fig.suptitle(f"Throughput and tail latency vs batch size: {group_title(key)}", fontsize=9)
-    return save(fig, out, f"batch_qps_p99_{group_tag(key)}.png")
+    return save(fig, out, f"{group_tag(key, 'batch_qps_p99')}.png")
 
 
 def plot_peak(key, recs, cm, out):
@@ -151,7 +152,7 @@ def plot_peak(key, recs, cm, out):
                 ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
     ax.set_title(f"Achieved FLOP/s as % of peak: {group_title(key)}", fontsize=9)
-    return save(fig, out, f"percent_of_peak_{group_tag(key)}.png")
+    return save(fig, out, f"{group_tag(key, 'percent_of_peak')}.png")
 
 
 def save(fig, out, name):

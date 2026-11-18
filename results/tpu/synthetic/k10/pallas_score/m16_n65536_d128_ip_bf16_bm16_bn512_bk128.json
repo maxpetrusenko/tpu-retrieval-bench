@@ -1,0 +1,95 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-11-18T13:32:50Z-52551c9",
+  "dataset": {
+    "name": "synthetic",
+    "source_url": null,
+    "n_train": 65536,
+    "n_test": 16,
+    "dim": 128,
+    "distance": "ip",
+    "dtype_stored": "bf16",
+    "dtype_compute": "bf16",
+    "seed": 0,
+    "hash": "5f3cb98dda9a8a98"
+  },
+  "algorithm": {
+    "name": "pallas_score_topk",
+    "params": {
+      "precision": "bf16",
+      "bm": 16,
+      "bn": 512,
+      "bk": 128,
+      "chunk": 65536,
+      "interpret": false
+    },
+    "exact": true
+  },
+  "query": {
+    "k": 10,
+    "batch_size": 16,
+    "n_batches": 1,
+    "mode": "batch",
+    "n_queries_timed": 16,
+    "warmup_iters": 3,
+    "repetitions": 5
+  },
+  "hardware": {
+    "platform": "tpu",
+    "device_kind": "TPU v5 lite",
+    "n_devices": 1,
+    "host": "8d526688053e",
+    "jax_version": "0.12.0.1",
+    "jaxlib_version": "0.12.0.1",
+    "libtpu_version": "0.0.50",
+    "python": "3.13.18"
+  },
+  "metrics": {
+    "recall": 1.0,
+    "recall_sampled_queries": 16,
+    "recall_epsilon_0.01": null,
+    "recall_compute_dtype": "bf16",
+    "qps": 39306.24477546769,
+    "best_search_time_s": 0.0004070600000432023,
+    "search_time_s_all": [
+      0.0004284199999347038,
+      0.0004140499997902225,
+      0.0004153700001552352,
+      0.0004070600000432023,
+      0.00042628000005606737
+    ],
+    "latency_ms_per_batch": {
+      "min": 0.4070600000432023,
+      "p50": 0.4153700001552352,
+      "p95": 0.4279919999589765,
+      "p99": 0.42833439993955835,
+      "mean": 0.41823599999588623
+    },
+    "latency_ms_per_query_amortized": 0.025441250002700144,
+    "compile_time_s": 0.2799129009999888,
+    "build_time_s": 0.00044791100003749307,
+    "index_size_bytes": 18874368,
+    "score_matrix_bytes": 4194304,
+    "bytes_moved": 25175296.0,
+    "arithmetic_intensity": 10.662653420241812,
+    "roofline_label": "VPU/COP-bound",
+    "selection_time_ms": null,
+    "matmul_time_ms": null,
+    "selection_over_matmul": null,
+    "flops_achieved": 659449358746.893,
+    "flops_peak": 197000000000000.0,
+    "percent_of_peak": 0.33474586738420964
+  },
+  "timing": {
+    "clock": "perf_counter",
+    "synchronized": "block_until_ready",
+    "includes_h2d_query_transfer": false,
+    "includes_d2h_result": false,
+    "xla_flags": ""
+  },
+  "git": {
+    "commit": "52551c9d02940beb633f986bf866e1c6c125f3be",
+    "dirty": false
+  },
+  "created_at": "2026-11-18T13:32:50Z"
+}

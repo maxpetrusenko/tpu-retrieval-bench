@@ -34,4 +34,11 @@ Results go to `results/<platform>/<dataset>/k<k>/<algo>/<params>.json`. CPU numb
 
 ## Results
 
-Pending TPU run.
+TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Full report: [docs/RESULTS.md](docs/RESULTS.md).
+
+- Stock XLA (`jit_matmul_topk`) was the fastest exact variant in 7 of 9 shapes; the Pallas scoring kernel beat it by under 2% in two shapes and lost by up to 2x at M=1.
+- Selection dominates: `top_k` took 1.4x to 8.2x the matmul time at M >= 16 (the 27x claim did not reproduce at k=10). No exact variant passed 3.2% of peak.
+- `approx_max_k` at recall target 0.95: 558,188 QPS on SIFT-1M at recall 0.980, 23x the exact baseline (24,093 QPS), 72.5% of peak.
+- Not measured yet: Pallas block sweep, `approx_max_k` recall curve, fused top-k kernel.
+
+![SIFT-1M recall vs QPS on TPU v5e-1](docs/img/tpu_recall_qps_sift-128-euclidean_1000000_128_10_bf16.png)

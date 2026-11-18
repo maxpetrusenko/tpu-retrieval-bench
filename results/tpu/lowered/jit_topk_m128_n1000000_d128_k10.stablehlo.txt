@@ -1,0 +1,9 @@
+module @jit__lambda attributes {mhlo.num_partitions = 1 : i32, mhlo.num_replicas = 1 : i32} {
+  func.func public @main(%arg0: tensor<128x128xf32>, %arg1: tensor<1000000x128xbf16>) -> (tensor<128x10xf32> {jax.result_info = "result[0]"}, tensor<128x10xi32> {jax.result_info = "result[1]"}) {
+    %0 = stablehlo.convert %arg0 : (tensor<128x128xf32>) -> tensor<128x128xbf16>
+    %1 = stablehlo.transpose %arg1, dims = [1, 0] : (tensor<1000000x128xbf16>) -> tensor<128x1000000xbf16>
+    %2 = stablehlo.dot_general %0, %1, contracting_dims = [1] x [0], precision = [DEFAULT, DEFAULT] : (tensor<128x128xbf16>, tensor<128x1000000xbf16>) -> tensor<128x1000000xf32>
+    %values, %indices = chlo.top_k(%2, k = 10) : tensor<128x1000000xf32> -> (tensor<128x10xf32>, tensor<128x10xi32>)
+    return %values, %indices : tensor<128x10xf32>, tensor<128x10xi32>
+  }
+}
