@@ -14,6 +14,20 @@ Benchmark for exact top-k embedding retrieval on TPU. Question: when does a hand
 | stage | `score_only`, `select_only` | matmul and selection timed apart (selection over matmul ratio) |
 | V4 | `pallas_fused_topk` | planned: per-tile top-k inside the kernel |
 
+## Support matrix
+
+What the tests and committed results show today. "CPU interpret" = pytest on CPU (Pallas in interpret mode: numerics only). "TPU v5e measured" = a committed record in `results/tpu/` from the Colab v5e-1 run. "GPU untested" = nothing was run on GPU. Not measured means not measured.
+
+| variant | CPU interpret | TPU v5e measured | GPU |
+|---|---|---|---|
+| `jit_topk` | ip, l2, cos; mask; tested | ip (synthetic), l2 (SIFT-1M); no mask, no cos | untested |
+| `blockwise` | ip, l2, cos; mask; tested | ip (synthetic), l2 (SIFT-1M); no mask, no cos | untested |
+| `pallas_score` | ip, l2, cos; mask; tested; TPU lowering test from CPU | ip (synthetic), l2 (SIFT-1M); no mask, no cos; one block config, no sweep | untested |
+| `approx_max_k` | ip, no mask; recall tested at targets 0.9, 0.95, 0.99 | ip (synthetic), l2 (SIFT-1M); recall target 0.95 only | untested |
+| `pallas_fused_topk` (V4) | not built | not built | untested |
+
+Mask support (`False` = excluded): `jit_topk`, `blockwise` and `pallas_score` are tested with a 30% mask on CPU; `bench/run.py` has no mask option, so no TPU record uses one. GPU: Pallas TPU kernels do not target GPU, and the XLA variants were never run there.
+
 ## Quickstart (CPU)
 
 ```
