@@ -10,7 +10,7 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 | HDF5 `train/test/neighbors/distances`, 100 stored neighbors, attr `distance` | ann-benchmarks (benchmarks.md s1) | `datasets.load_ann`; euclidean -> `l2`, angular -> `cos` |
 | k-nn recall with distance threshold (kth true distance + 1e-3, ties count) | ann-benchmarks `plotting/metrics.py` | `datasets.knn_recall` |
 | QPS = n_queries / best (minimum) time of >= 5 repetitions; p50/p95/p99 | ann-benchmarks `runner.py`, VDBBench | `timing.py`, results JSON `metrics` |
-| Batch mode: all queries at once; batch size is a sweep axis | ann-benchmarks `--batch`, cuVS `--batch-size` | M in {1, 16, 128, 1024}; plot (b) |
+| Batch mode: queries chunked by `--batch-size` (default 1024); batch size is a sweep axis; QPS = all queries / pass time | ann-benchmarks `--batch`, cuVS `--batch-size` | M in {1, 16, 128, 1024}; plot (b) |
 | Warmup before timing, device time from a profiler trace | Faiss `bench_gpu_sift1m.py`, tallax | warmup >= 3; `jax.profiler` trace in the notebook |
 | Datasets SIFT-1M (L2) and GloVe-100 (cosine), 10K queries | TPU-KNN (arXiv 2206.14286) | `bench/download.py sift|glove`; GIST-960 as a high-dim stress |
 | Three ceilings: MXU FLOP/s, HBM B/s, VPU/COP ops/s | TPU-KNN s4 (papers.md s1) | `roofline.label` |

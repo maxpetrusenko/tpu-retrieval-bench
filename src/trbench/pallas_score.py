@@ -1,12 +1,15 @@
 """V3: Pallas tiled matmul with fused l2 term + mask epilogue; selection in JAX by db chunks.
 
 Aux operand (8, Np) f32 per db: row 0 = ||e||^2, row 1 = valid (1.0 / 0.0). 8 rows keeps the
-block (8, bn) tile-aligned for Mosaic. Full M x N is never materialized: each scan step scores
-one chunk of `chunk` columns (a multiple of bn), takes its top-k, and merges.
+block (8, bn) tile-aligned for Mosaic. The full M x N is never live at once (the roofline model
+still counts block scores as modeled HBM traffic): each scan step scores one chunk of `chunk`
+columns (a multiple of bn), takes its top-k, and merges. The last chunk is only padded to bn,
+not to a full chunk.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import partial
 
 import jax
@@ -15,7 +18,7 @@ from jax import lax
 from jax.experimental import pallas as pl
 from jax.experimental.pallas import tpu as pltpu
 
-from trbench._common import block_topk, init_running, merge_topk, prep, round_up
+from trbench._common import block_topk, init_running, l2_normalize, merge_topk, round_up
 
 DEFAULT_BM, DEFAULT_BN, DEFAULT_BK = 256, 512, 512
 DEFAULT_CHUNK = 65536
@@ -68,7 +71,7 @@ def score_tiles(q, e, aux, *, bm, bn, bk, is_l2, interpret):
 
 
 def resolve_blocks(m, n, d, bm, bn, bk, chunk):
-    """Clamp blocks for small shapes; chunk is a multiple of bn."""
+    """Clamp blocks for small shapes; chunk is a multiple of bn. Returns (bm, bn, bk, cn)."""
     bm = min(bm, round_up(m, 16))
     bn = min(bn, round_up(n, 128))
     bk = min(bk, round_up(d, 128))
@@ -76,44 +79,97 @@ def resolve_blocks(m, n, d, bm, bn, bk, chunk):
     return bm, bn, bk, cn
 
 
-def pallas_impl(queries, db, mask, *, k, metric, compute_dtype, bm, bn, bk, chunk, interpret):
-    m, d = queries.shape
-    n = db.shape[0]
-    bm, bn, bk, cn = resolve_blocks(m, n, d, bm, bn, bk, chunk)
-    mp, dp, np_ = round_up(m, bm), round_up(d, bk), round_up(n, cn)
-    q, e = prep(queries, db, metric)
+@partial(jax.tree_util.register_dataclass,
+         data_fields=["ecs", "auxs", "e_rem", "aux_rem"], meta_fields=["bn", "bk", "cn"])
+@dataclass
+class PallasIndex:
+    """Prepared db: padded, compute dtype, aux (norms + valid) built once.
+
+    ecs/auxs: full chunks (nfull, cn, Dp) / (nfull, 8, cn). e_rem/aux_rem: one smaller last
+    chunk padded only to bn (not to a full chunk), or None.
+    """
+
+    ecs: object
+    auxs: object
+    e_rem: object
+    aux_rem: object
+    bn: int
+    bk: int
+    cn: int
+
+
+def prepare_pallas(db, mask, *, metric, compute_dtype, bn, bk, chunk):
+    n, d = db.shape
+    _, bn, bk, cn = resolve_blocks(16, n, d, 16, bn, bk, chunk)
+    dp, np_ = round_up(d, bk), round_up(n, bn)
+    e = db.astype(jnp.float32)
+    if metric == "cos":
+        e = l2_normalize(e)
     esq = jnp.sum(e * e, axis=1) if metric == "l2" else jnp.zeros((n,), jnp.float32)
     valid = jnp.ones((n,), jnp.float32) if mask is None else mask.astype(jnp.float32)
-    qc = jnp.pad(q.astype(compute_dtype), ((0, mp - m), (0, dp - d)))
     ec = jnp.pad(e.astype(compute_dtype), ((0, np_ - n), (0, dp - d)))
     aux = jnp.zeros((8, np_), jnp.float32)
     aux = aux.at[0, :n].set(esq).at[1, :n].set(valid)  # padded columns stay invalid
-    nc = np_ // cn
-    ecs = ec.reshape(nc, cn, dp)
-    auxs = aux.reshape(8, nc, cn).transpose(1, 0, 2)
+    nfull = np_ // cn
+    full = nfull * cn
+    ecs = ec[:full].reshape(nfull, cn, dp)
+    auxs = aux[:, :full].reshape(8, nfull, cn).transpose(1, 0, 2)
+    rem = np_ > full
+    return PallasIndex(ecs, auxs, ec[full:] if rem else None, aux[:, full:] if rem else None,
+                       bn, bk, cn)
 
-    def step(carry, xs):
-        run_v, run_i = carry
-        e_c, aux_c, off = xs
-        s = score_tiles(qc, e_c, aux_c, bm=bm, bn=bn, bk=bk, is_l2=metric == "l2",
-                        interpret=interpret)
-        bv, bi = block_topk(s, k, off)
-        return merge_topk(run_v, run_i, bv, bi, k), None
 
-    offs = jnp.arange(nc, dtype=jnp.int32) * cn
-    (vals, ids), _ = lax.scan(step, init_running(mp, k), (ecs, auxs, offs))
+def search_pallas(queries, idx, *, k, metric, compute_dtype, bm, interpret):
+    m, d = queries.shape
+    bm = min(bm, round_up(m, 16))
+    mp, dp = round_up(m, bm), idx.ecs.shape[2] if idx.ecs.shape[0] else idx.e_rem.shape[1]
+    q = queries.astype(jnp.float32)
+    if metric == "cos":
+        q = l2_normalize(q)
+    qc = jnp.pad(q.astype(compute_dtype), ((0, mp - m), (0, dp - d)))
+    kw = {"bm": bm, "bn": idx.bn, "bk": idx.bk, "is_l2": metric == "l2", "interpret": interpret}
+    carry = init_running(mp, k)
+    if idx.ecs.shape[0]:
+        def step(carry, xs):
+            e_c, aux_c, off = xs
+            s = score_tiles(qc, e_c, aux_c, **kw)
+            bv, bi = block_topk(s, k, off)
+            return merge_topk(*carry, bv, bi, k), None
+
+        offs = jnp.arange(idx.ecs.shape[0], dtype=jnp.int32) * idx.cn
+        carry, _ = lax.scan(step, carry, (idx.ecs, idx.auxs, offs))
+    if idx.e_rem is not None:
+        s = score_tiles(qc, idx.e_rem, idx.aux_rem, **kw)
+        bv, bi = block_topk(s, k, idx.ecs.shape[0] * idx.cn)
+        carry = merge_topk(*carry, bv, bi, k)
+    vals, ids = carry
     return vals[:m], ids[:m]
+
+
+def make_pallas_parts(k, *, metric="ip", compute_dtype=jnp.bfloat16, has_mask=False,
+                      bm=DEFAULT_BM, bn=DEFAULT_BN, bk=DEFAULT_BK, chunk=DEFAULT_CHUNK,
+                      interpret=None):
+    interpret = default_interpret() if interpret is None else interpret
+    pk = {"metric": metric, "compute_dtype": compute_dtype, "bn": bn, "bk": bk, "chunk": chunk}
+    sk = {"k": k, "metric": metric, "compute_dtype": compute_dtype, "bm": bm,
+          "interpret": interpret}
+    if has_mask:
+        prep_fn = jax.jit(lambda e, mk: prepare_pallas(e, mk, **pk))
+    else:
+        prep_fn = jax.jit(lambda e: prepare_pallas(e, None, **pk))
+    return prep_fn, jax.jit(lambda q, idx: search_pallas(q, idx, **sk))
 
 
 def make_pallas_score(k, *, metric="ip", compute_dtype=jnp.bfloat16, has_mask=False,
                       bm=DEFAULT_BM, bn=DEFAULT_BN, bk=DEFAULT_BK, chunk=DEFAULT_CHUNK,
                       interpret=None):
     interpret = default_interpret() if interpret is None else interpret
-    kw = {"k": k, "metric": metric, "compute_dtype": compute_dtype, "bm": bm, "bn": bn,
-          "bk": bk, "chunk": chunk, "interpret": interpret}
+    pk = {"metric": metric, "compute_dtype": compute_dtype, "bn": bn, "bk": bk, "chunk": chunk}
+    sk = {"k": k, "metric": metric, "compute_dtype": compute_dtype, "bm": bm,
+          "interpret": interpret}
     if has_mask:
-        return jax.jit(lambda q, e, mk: pallas_impl(q, e, mk, **kw))
-    return jax.jit(lambda q, e: pallas_impl(q, e, None, **kw))
+        return jax.jit(lambda q, e, mk: search_pallas(q, prepare_pallas(e, mk, **pk), **sk))
+    return jax.jit(lambda q, e: search_pallas(q, prepare_pallas(e, None, **pk), **sk))
 
 
 def pallas_score(queries, db, k, *, metric="ip", mask=None, compute_dtype=jnp.bfloat16, **kw):

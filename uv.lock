@@ -1035,6 +1035,8 @@ plot = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "h5py" },
+    { name = "matplotlib" },
     { name = "nbformat" },
     { name = "pytest" },
     { name = "ruff" },
@@ -1052,6 +1054,8 @@ provides-extras = ["hdf5", "data", "plot"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "h5py" },
+    { name = "matplotlib" },
     { name = "nbformat" },
     { name = "pytest" },
     { name = "ruff" },

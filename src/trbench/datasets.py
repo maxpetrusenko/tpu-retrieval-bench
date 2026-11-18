@@ -22,22 +22,26 @@ def resolve(name_or_path) -> Path:
     return DATA_DIR / f"{name_or_path}.hdf5"
 
 
-def bruteforce_gt(train, test, metric, k=100, chunk=1024):
-    """Exact (neighbors, distances) in ann-benchmarks convention; used for n_train subsets."""
+def bruteforce_gt(train, test, metric, k=100, chunk=None):
+    """Exact (neighbors, distances) in ann-benchmarks convention; used for n_train subsets.
+
+    float32 throughout; queries are chunked so a chunk x N distance block stays near 256 MB.
+    """
     train = np.asarray(train, dtype=np.float32)
     test = np.asarray(test, dtype=np.float32)
     if metric == "cos":
         train = train / np.maximum(np.linalg.norm(train, axis=1, keepdims=True), 1e-30)
         test = test / np.maximum(np.linalg.norm(test, axis=1, keepdims=True), 1e-30)
     k = min(k, len(train))
-    e2 = np.sum(train.astype(np.float64) ** 2, axis=1)
+    chunk = chunk or max(1, int(64e6 // max(len(train), 1)))
+    e2 = np.sum(train * train, axis=1)
     ids = np.empty((len(test), k), dtype=np.int64)
-    dists = np.empty((len(test), k), dtype=np.float64)
+    dists = np.empty((len(test), k), dtype=np.float32)
     for s in range(0, len(test), chunk):
         q = test[s : s + chunk]
-        dot = (q @ train.T).astype(np.float64)
+        dot = q @ train.T
         if metric == "l2":
-            d = np.sum(q.astype(np.float64) ** 2, axis=1, keepdims=True) - 2 * dot + e2[None, :]
+            d = np.sum(q * q, axis=1, keepdims=True) - 2 * dot + e2[None, :]
             d = np.sqrt(np.maximum(d, 0.0))
         else:
             d = 1.0 - dot

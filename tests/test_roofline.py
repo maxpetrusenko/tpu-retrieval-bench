@@ -66,3 +66,22 @@ def test_labels():
 def test_percent_of_peak():
     assert rf.percent_of_peak(98.5e12, V5E) == pytest.approx(50.0)
     assert rf.percent_of_peak(1e12, "cpu") is None
+
+
+def test_db_read_uses_stored_dtype():
+    base = rf.bytes_moved("jit_topk", 16, 1000, 128, 10, "bf16")
+    f32_db = rf.bytes_moved("jit_topk", 16, 1000, 128, 10, "bf16", db_dtype="f32")
+    assert f32_db - base == 1000 * 128 * 2
+    q32 = rf.bytes_moved("jit_topk", 16, 1000, 128, 10, "bf16", q_dtype="f32")
+    assert q32 - base == 16 * 128 * 2
+
+
+def test_percent_of_peak_null_for_f32_compute():
+    assert rf.percent_of_peak(98.5e12, V5E, "f32") is None
+
+
+def test_score_only_never_labelled_from_ratio():
+    big = (1024, 1_000_000, 128, 10)
+    assert rf.label("score_only", *big, "bf16", V5E, select_time_s=9.0, matmul_time_s=1.0) != (
+        "VPU/COP-bound"
+    )

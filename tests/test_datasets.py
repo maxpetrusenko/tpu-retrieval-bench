@@ -1,24 +1,8 @@
 import numpy as np
 import pytest
+from tests._h5 import make_file
 
 from trbench import datasets as ds
-
-h5py = pytest.importorskip("h5py")
-
-
-def make_file(path, distance="euclidean", n=200, nq=7, d=8, seed=0):
-    rng = np.random.default_rng(seed)
-    train = rng.standard_normal((n, d), dtype=np.float32)
-    test = rng.standard_normal((nq, d), dtype=np.float32)
-    metric = ds.METRIC_MAP[distance]
-    nb, dist = ds.bruteforce_gt(train, test, metric, k=100)
-    with h5py.File(path, "w") as f:
-        f.create_dataset("train", data=train)
-        f.create_dataset("test", data=test)
-        f.create_dataset("neighbors", data=nb)
-        f.create_dataset("distances", data=dist)
-        f.attrs["distance"] = distance
-    return train, test
 
 
 @pytest.mark.parametrize("dist,metric", [("euclidean", "l2"), ("angular", "cos")])

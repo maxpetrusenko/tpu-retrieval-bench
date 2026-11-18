@@ -33,7 +33,7 @@ Scores: ip = q.e; cos = ip on L2-normalized rows; l2 = 2 q.e - ||e||^2 (same ran
 |---|---|---|
 | V0 | `numpy_ref` | float64 NumPy oracle. Ties: lower id wins. |
 | V1 | `jit_topk` | `jax.jit`: full `Q @ E.T` then `lax.top_k`. Baseline. |
-| V2 | `blockwise` | scan over db blocks of size B; per-block `lax.top_k`; merge running top-k. Never materializes M x N. |
+| V2 | `blockwise` | scan over db blocks of size B; per-block `lax.top_k`; merge running top-k. Holds one M x B score block at a time, never the full M x N; modeled HBM traffic still counts each block's score write + read. |
 | V3 | `pallas_score` | Pallas TPU kernel: tiled matmul + fused mask (+ l2 norm term) writing a score tile; selection stays in JAX (blockwise merge). Isolates "kernel helped?" from "blocking helped?". |
 | V4 | `pallas_fused_topk` (stretch) | Pallas kernel also emits per-tile partial top-k (k <= 128) so only M x (N/bn) x k leaves VMEM. The novel piece. |
 | A1 | `approx_max_k` | `lax.approx_max_k` at recall_target {0.90, 0.95, 0.99}. Reported separately, never ranked with exact. |
@@ -43,7 +43,7 @@ Scores: ip = q.e; cos = ip on L2-normalized rows; l2 = 2 q.e - ||e||^2 (same ran
 R1 Correctness oracle: V1-V4 match V0 top-k ids and scores (bf16 tolerance) with the tie policy; recall@k = 1.0 for exact variants; any deviation fails CI. (Faiss 2024 recall definition: use ann-benchmarks k-nn recall, distance-threshold.)
 R2 FLOP/s achieved = 2*M*N*D / device_time, reported as % of chip peak from a cited table (v5e 197 TFLOP/s bf16, 820 GB/s).
 R3 Roofline label per run: MXU-bound, HBM-bound, or VPU/COP-bound (TPU-KNN 3-ceiling model).
-R4 Fused vs unfused ablation: bytes of the materialized score matrix (V1) vs not (V2-V4), and timing delta.
+R4 Fused vs unfused ablation: modeled HBM bytes of the score matrix write + re-read (V1-V3) vs none (V4), and timing delta.
 R5 Stage split: time scoring and selection separately; report selection time as a multiple of matmul time (compare with the 27x claim).
 R6 Approx baseline A1 with measured recall@10 against V0, on its own recall-vs-QPS curve.
 R7 Harness hygiene: compile time measured separately via AOT `jit(f).lower(...).compile()`; warmup >= 3; `block_until_ready` before stopping the clock; repetitions >= 5; report min (ann-benchmarks QPS), p50, p95, p99; db resident on device; optional device time from `jax.profiler` trace (tallax style).

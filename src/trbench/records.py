@@ -6,27 +6,27 @@ import datetime as dt
 import json
 from pathlib import Path
 
-PEAK_BF16_FLOPS = {"v5e": 197e12, "v6e": 920e12}
+from trbench import roofline
+
 SCHEMA_VERSION = "0.1"
 
 
 def peak_flops(device_kind: str):
-    """Peak bf16 FLOP/s from a small table keyed on device_kind text; None if unknown."""
-    kind = device_kind.lower()
-    if "v5 lite" in kind or "v5e" in kind or "v5litepod" in kind:
-        return PEAK_BF16_FLOPS["v5e"]
-    if "v6" in kind:
-        return PEAK_BF16_FLOPS["v6e"]
-    return None
+    """Peak bf16 FLOP/s from the single table in roofline.PEAKS; None if unknown."""
+    p = roofline.peak_for(device_kind)
+    return p.bf16_flops if p else None
 
 
 def build_record(*, dataset, algorithm, query, hardware, metrics, timing_extra=None, git,
-                 matmul=True):
-    """matmul=False (select_only): no matmul FLOP/s or percent_of_peak, all set to null."""
+                 matmul=True, compute_dtype="bf16"):
+    """matmul=False (select_only): no matmul FLOP/s or percent_of_peak, all set to null.
+
+    The peak table is bf16 only, so f32 compute gets flops_peak / percent_of_peak = null.
+    """
     best_s = metrics["best_search_time_s"]
     m, n, d = dataset["n_test"], dataset["n_train"], dataset["dim"]
     flops = 2.0 * m * n * d / best_s if matmul else None
-    peak = peak_flops(hardware["device_kind"]) if matmul else None
+    peak = peak_flops(hardware["device_kind"]) if matmul and compute_dtype == "bf16" else None
     metrics = dict(metrics)
     metrics.update(
         flops_achieved=flops,

@@ -4,9 +4,11 @@ import numpy as np
 import pytest
 
 from trbench import data
-from trbench.pallas_score import make_pallas_score, pallas_score
+from trbench.pallas_score import make_pallas_parts, make_pallas_score, pallas_score
 from trbench.reference import numpy_ref
 
+UNSUPPORTED_PLATFORM = ("unknown platform", "unsupported platform", "not supported on",
+                        "no lowering rule registered for platform", "platform tpu")
 M, N, D = 8, 600, 100  # N, D non-multiples of 128
 
 
@@ -45,6 +47,22 @@ def test_tpu_lowering_from_cpu():
     mk = jax.ShapeDtypeStruct((512,), jnp.bool_)
     try:
         text = f.trace(q, e, mk).lower(lowering_platforms=("tpu",)).as_text()
-    except Exception as ex:  # noqa: BLE001  unsupported on this jax/host
-        pytest.skip(f"TPU lowering from CPU unsupported: {type(ex).__name__}: {str(ex)[:120]}")
+    except Exception as ex:
+        msg = str(ex).lower()
+        # skip only when this host cannot lower for TPU at all; any other failure is a real bug
+        if any(t in msg for t in UNSUPPORTED_PLATFORM):
+            pytest.skip(f"TPU lowering unsupported on this host: {str(ex)[:160]}")
+        raise
     assert "tpu_custom_call" in text or "mosaic" in text.lower()
+
+
+def test_prepared_parts_match_one_shot_and_use_small_last_chunk():
+    q, e, mask = data.synthetic(M, N, D, seed=3, mask_frac=0.2)
+    kw = {"bm": 16, "bn": 128, "bk": 128, "chunk": 256, "compute_dtype": jnp.float32}
+    prep, search = make_pallas_parts(10, metric="l2", has_mask=True, **kw)
+    idx = prep(e, mask)
+    assert idx.e_rem is not None and idx.e_rem.shape[0] == 128  # 640 = 2 * 256 + 128
+    s1, i1 = search(q, idx)
+    s2, i2 = pallas_score(q, e, 10, metric="l2", mask=mask, **kw)
+    np.testing.assert_array_equal(np.asarray(i1), np.asarray(i2))
+    np.testing.assert_array_equal(np.asarray(s1), np.asarray(s2))
