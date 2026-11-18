@@ -15,7 +15,7 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 | Datasets SIFT-1M (L2) and GloVe-100 (cosine), 10K queries | TPU-KNN (arXiv 2206.14286) | `bench/download.py sift|glove`; GIST-960 as a high-dim stress |
 | Three ceilings: MXU FLOP/s, HBM B/s, VPU/COP ops/s | TPU-KNN s4 (papers.md s1) | `roofline.label` |
 | Exact top-k time as a multiple of matmul time | Samaga et al. (27x on v5e, papers.md s2) | stage-split timing (S2) |
-| Fused vs unfused: score matrix never written to HBM | Faiss GPU (>= 25% faster fused), TPU-KNN | `roofline.bytes_moved` materialization term; only a future `pallas_fused` (V4) is unfused-free |
+| Fused vs unfused: score matrix never written to HBM | Faiss GPU (>= 25% faster fused), TPU-KNN | `roofline.bytes_moved` materialization term; `pallas_fused_topk` / `pallas_fused_bucket` (V4) are unfused-free (they add only the candidate write, M * n_tiles * k' * 8 B) |
 | "Peak possible" = max(GEMM at peak, tile traffic at peak BW) | Faiss GPU paper (papers.md s3) | report % of that bound next to % of FLOP/s peak |
 
 ## 2. Timing rules
@@ -42,7 +42,7 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 `roofline.label` returns MXU-bound, HBM-bound, VPU/COP-bound or unknown.
 
 - Peaks (per TensorCore, JAX Pallas hardware reference, jax-pallas-tpu.md s4): v5e (`TPU v5 lite`) 197 TFLOP/s bf16, 820 GB/s; v6e (`TPU v6 lite`) 920 TFLOP/s, 1640 GB/s. Other chips return `unknown`; they are not keyed because the table is per TensorCore and multi-TC chips were not verified at chip level.
-- FLOPs = 2*M*N*D. Bytes = (M*D + N*D) * itemsize + M*k*8. `jit_topk`, `approx_max_k`, `blockwise` and `pallas_score` all add 2*4*M*N: they write all M*N f32 scores to HBM (blockwise and the Pallas score kernel do it in chunks) and read them back for `top_k`. Only a future `pallas_fused` (V4, per-tile top-k kept in VMEM) skips that traffic, so today every measured variant is charged for it and the fused/unfused ablation (R4) needs V4.
+- FLOPs = 2*M*N*D. Bytes = (M*D + N*D) * itemsize + M*k*8. `jit_topk`, `approx_max_k`, `blockwise` and `pallas_score` all add 2*4*M*N: they write all M*N f32 scores to HBM (blockwise and the Pallas score kernel do it in chunks) and read them back for `top_k`. `pallas_fused_topk` and `pallas_fused_bucket` (V4, per-tile top-k kept in VMEM) skip that traffic and instead pay M * n_tiles * k' * 8 bytes of per-tile candidates (`kprime` = k for top-k, L lanes for bucket; `bench/run.py` passes n_tiles and kprime). The R4 ablation compares them with `pallas_score` on TPU.
 - Stage helpers: `score_only` = reads Q, E and writes M*N*4 bytes; `select_only` = reads M*N*4 and writes the top-k.
 - Every record carries `roofline_label`, `percent_of_peak`, `bytes_moved` and `arithmetic_intensity` in `metrics`. `select_only` does no matmul, so its `flops_achieved` and `percent_of_peak` are null; it records `selection_time_ms` instead.
 - R5 ratio: when one `bench/run.py` invocation runs `score_only` and `select_only` on the same shape, both records get `selection_time_ms`, `matmul_time_ms` and `selection_over_matmul` (best selection time divided by best matmul time), and their label is recomputed from it.

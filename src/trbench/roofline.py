@@ -27,7 +27,7 @@ VARIANTS = (
 )
 # variants that write then re-read the full M x N f32 score matrix through HBM. blockwise and
 # pallas_score write all M*N scores to HBM (in chunks) and read them back for top_k. Only a
-# future pallas_fused (V4, per-tile top-k in VMEM) avoids it.
+# pallas_fused (V4, per-tile top-k in VMEM) avoids it.
 MATERIALIZING = frozenset({"jit_topk", "approx_max_k", "blockwise", "pallas_score"})
 LABELS = ("MXU-bound", "HBM-bound", "VPU/COP-bound", "unknown")
 _ITEMSIZE = {"bf16": 2, "bfloat16": 2, "f16": 2, "float16": 2, "f32": 4, "float32": 4}
@@ -50,13 +50,17 @@ def _itemsize(dtype) -> int:
 
 
 def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype="bf16", *,
-                q_dtype=None, db_dtype=None) -> float:
+                q_dtype=None, db_dtype=None, n_tiles: int | None = None,
+                kprime: int | None = None) -> float:
     """Modeled HBM bytes per search call.
 
     Reads Q (M*D) in `q_dtype` and E (N*D) in `db_dtype` (the dtype the index is stored in;
     both default to `dtype`), writes top-k (M*k f32 scores + int32 ids).
     jit_topk, approx_max_k, blockwise and pallas_score additionally write and re-read the
-    M x N f32 score matrix (2 * 4 * M * N). Only pallas_fused avoids it.
+    M x N f32 score matrix (2 * 4 * M * N). Only pallas_fused avoids it. It adds the candidate
+    write M * n_tiles * kprime * 8 when `n_tiles` (db column tiles) and `kprime` (candidates
+    per tile: k for exact top-k, L lanes for the bucket variant) are given; omit both for the
+    ideal fully fused bound.
     Stage helpers: score_only reads Q, E and writes the scores (no top-k, no re-read);
     select_only reads the scores and writes the top-k (no Q, E).
     """
@@ -73,6 +77,8 @@ def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype="bf16", *,
     total = reads + topk
     if variant in MATERIALIZING:
         total += 2 * 4 * m * n
+    if variant == "pallas_fused" and n_tiles and kprime:
+        total += m * n_tiles * kprime * 8
     return float(total)
 
 

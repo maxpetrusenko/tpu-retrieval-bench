@@ -35,6 +35,22 @@ def test_prepared_index_is_untimed_and_stored_in_compute_dtype(tmp_path):
         assert mt["recall"] >= 0.99, name
 
 
+def test_fused_algos_record_candidate_bytes(tmp_path):
+    run.main(["--algos", "pallas_fused_topk,pallas_fused_bucket,pallas_score", "--m", "4",
+              "--n", "600", "--d", "16", "--k", "5", "--out", str(tmp_path), "--bn", "128",
+              "--bk", "128", "--dtype", "f32"])
+    recs = read_all(tmp_path)
+    by = {r["algorithm"]["name"]: r for r in recs.values()}
+    ft, fb, ps = (by["pallas_fused_topk"], by["pallas_fused_bucket"], by["pallas_score_topk"])
+    assert ft["algorithm"]["exact"] is True and fb["algorithm"]["exact"] is False
+    assert ft["metrics"]["recall"] == 1.0 and fb["metrics"]["recall"] >= 0.9
+    # 600 -> 5 tiles of 128; bytes = io + M * n_tiles * k' * 8, no M*N score traffic
+    io = ps["metrics"]["bytes_moved"] - 2 * 4 * 4 * 600
+    assert ft["metrics"]["bytes_moved"] == io + 4 * 5 * 5 * 8
+    assert fb["metrics"]["bytes_moved"] == io + 4 * 5 * 128 * 8
+    assert ft["metrics"]["score_matrix_bytes"] is None
+
+
 def test_dataset_flag_with_batches(tmp_path):
     make_file(tmp_path / "sift-128-euclidean.hdf5", "euclidean", n=300, nq=6, d=16)
     run.main(["--dataset", "sift-128-euclidean", "--data-dir", str(tmp_path), "--algos",

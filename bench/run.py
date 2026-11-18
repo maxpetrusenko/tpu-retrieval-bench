@@ -20,6 +20,7 @@ from trbench import data, datasets, env, records, reference, roofline, timing
 from trbench.approx import make_approx_parts
 from trbench.blockwise import make_blockwise_parts, make_score_only_parts, make_select_only
 from trbench.jit_topk import make_jit_topk_parts
+from trbench.pallas_fused import LANES, make_fused_parts
 from trbench.pallas_score import make_pallas_parts, resolve_blocks
 
 DTYPES = {"bf16": jnp.bfloat16, "f32": jnp.float32}
@@ -32,8 +33,11 @@ def ints(s):
 
 def parse(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--algos", default="jit_topk", help="comma list: numpy_ref,jit_topk,blockwise,pallas_score,approx_max_k,"
-                   "score_only,select_only")
+    p.add_argument("--algos", default="jit_topk", help="comma list: numpy_ref,jit_topk,blockwise,pallas_score,"
+                   "pallas_fused_topk,pallas_fused_bucket,approx_max_k,score_only,select_only")
+    p.add_argument("--kprime", type=int, default=None,
+                   help="pallas_fused_topk: per-tile candidates (default k = exact; < k approximate)")
+    p.add_argument("--lanes", type=int, default=LANES, help="pallas_fused_bucket: bins per tile")
     p.add_argument("--dataset", default="synthetic",
                    choices=["synthetic", *datasets.DATASETS], help="synthetic or ann-benchmarks")
     p.add_argument("--data-dir", default=None, help="dir with <dataset>.hdf5 (default repo data/)")
@@ -56,7 +60,7 @@ def parse(argv=None):
     p.add_argument("--chunk", type=int, default=65536, help="pallas_score selection chunk")
     p.add_argument("--recall-target", type=float, default=0.95)
     p.add_argument("--sweep-blocks", action="store_true",
-                   help="pallas_score: sweep bm/bn/bk grid, one JSON each")
+                   help="pallas_score / pallas_fused_*: sweep bm/bn/bk grid, one JSON each")
     p.add_argument("--batch-size", type=int, default=1024,
                    help="queries per search call; a pass chunks M queries into batches so "
                    "scores stay <= ~4 GB. QPS = all queries / pass time")
@@ -66,7 +70,9 @@ def parse(argv=None):
 
 MATERIALIZING = roofline.MATERIALIZING | {"score_only", "select_only"}
 SWEEP = {"bm": [128, 256, 512], "bn": [256, 512, 1024], "bk": [128, 256, 512]}
-EXACT_ALGOS = ("jit_topk", "blockwise", "pallas_score")
+EXACT_ALGOS = ("jit_topk", "blockwise", "pallas_score", "pallas_fused_topk")
+FUSED = ("pallas_fused_topk", "pallas_fused_bucket")
+PALLAS_ALGOS = ("pallas_score", *FUSED)
 SAMPLE_QUERIES = 64  # oracle queries when the full numpy oracle is too big
 
 
@@ -90,6 +96,19 @@ def _pallas(k, dtype, a, bp):
                                              "interpret": jax.default_backend() != "tpu"}
 
 
+def _fused(mode):
+    def factory(k, dtype, a, bp, n=None):
+        bm, bn, bk = bp
+        kprime = a.kprime or k
+        p, s = make_fused_parts(k, n, metric=a.metric, compute_dtype=dtype, bm=bm, bn=bn, bk=bk,
+                                chunk=a.chunk, kprime=kprime, mode=mode, lanes=a.lanes)
+        params = {"bm": bm, "bn": bn, "bk": bk, "chunk": a.chunk,
+                  "interpret": jax.default_backend() != "tpu"}
+        params.update({"kprime": kprime} if mode == "topk" else {"lanes": a.lanes})
+        return p, s, f"pallas_fused_{mode}", mode == "topk" and kprime == k, params
+    return factory
+
+
 def _approx(k, dtype, a, bp):
     p, s = make_approx_parts(k, recall_target=a.recall_target, metric=a.metric,
                              compute_dtype=dtype)
@@ -107,7 +126,14 @@ def _select_only(k, dtype, a, bp):
 
 
 FACTORIES = {"jit_topk": _jit, "blockwise": _blockwise, "pallas_score": _pallas,
+             "pallas_fused_topk": _fused("topk"), "pallas_fused_bucket": _fused("bucket"),
              "approx_max_k": _approx, "score_only": _score_only, "select_only": _select_only}
+
+
+def build(algo, k, dtype, a, bp, n):
+    """Factory call; fused factories need the db size (static in the jitted search)."""
+    return FACTORIES[algo](k, dtype, a, bp, n) if algo in FUSED else FACTORIES[algo](
+        k, dtype, a, bp)
 
 
 def get_inputs(a, m, n, d, ann=None):
@@ -144,7 +170,7 @@ def params_str(algo, m, n, d, a, bp):
     params = f"m{m}_n{n}_d{d}_{a.metric}_{a.dtype}"
     if algo == "blockwise":
         params += f"_B{a.block_size}"
-    elif algo == "pallas_score":
+    elif algo in PALLAS_ALGOS:
         params += f"_bm{bp[0]}_bn{bp[1]}_bk{bp[2]}"
     elif algo == "approx_max_k":
         params += f"_r{a.recall_target}"
@@ -167,7 +193,7 @@ def time_jax(algo, q, e, k, a, bp):
     m = q.shape[0]
     bs = min(a.batch_size, m)
     qd, ed = jax.device_put(q), jax.device_put(e)  # db resident on device
-    prep_fn, search_fn, name, exact, params = FACTORIES[algo](k, dtype, a, bp)
+    prep_fn, search_fn, name, exact, params = build(algo, k, dtype, a, bp, e.shape[0])
     jax.block_until_ready(prep_fn(ed))  # compile + run once
     t0 = time.perf_counter()
     index = prep_fn(ed)
@@ -208,14 +234,20 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
         raise SystemExit(f"unknown algo {algo}")
     recall, n_recall_q, recall_eps2 = compute_recall(a, k, q, e, truth, got_scores)
     best = min(res["times_s"])
-    in_roofline = algo in roofline.VARIANTS
+    rf_algo = "pallas_fused" if algo in FUSED else algo
+    in_roofline = rf_algo in roofline.VARIANTS
     dkind = hw["device_kind"]
     # db is stored in compute dtype after prepare; queries arrive as f32
     dt = {"q_dtype": "f32", "db_dtype": a.dtype}
-    rf_bytes = sum(roofline.bytes_moved(algo, s, n, d, k, a.dtype, **dt) for s in sizes
+    if algo in FUSED:  # candidates written per db tile: M * n_tiles * k' * 8
+        bn = resolve_blocks(bs, n, d, bp[0], bp[1], bp[2], a.chunk)[1]
+        dt.update(n_tiles=-(-n // bn), kprime=params.get("kprime", params.get("lanes")))
+    rf_bytes = sum(roofline.bytes_moved(rf_algo, s, n, d, k, a.dtype, **dt) for s in sizes
                    ) if in_roofline else None
-    rf_ai = roofline.arithmetic_intensity(algo, bs, n, d, k, a.dtype, **dt) if in_roofline else None
-    rf_label = roofline.label(algo, bs, n, d, k, a.dtype, dkind, **dt) if in_roofline else "unknown"
+    rf_ai = roofline.arithmetic_intensity(rf_algo, bs, n, d, k, a.dtype, **dt
+                                          ) if in_roofline else None
+    rf_label = roofline.label(rf_algo, bs, n, d, k, a.dtype, dkind, **dt
+                              ) if in_roofline else "unknown"
     has_matmul = algo != "select_only"
     rec = records.build_record(
         dataset={
@@ -264,11 +296,11 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
 
 def compile_hlo(algo, q, e, k, a, bp):
     """HLO text of the search step for the first batch."""
-    prep_fn, search_fn, *_ = FACTORIES[algo](k, DTYPES[a.dtype], a, bp)
+    prep_fn, search_fn, *_ = build(algo, k, DTYPES[a.dtype], a, bp, e.shape[0])
     index = prep_fn(jax.device_put(e))
     qb = jax.device_put(q[: min(a.batch_size, q.shape[0])])
     if algo == "select_only":
-        _, _, _, _, params = FACTORIES[algo](k, DTYPES[a.dtype], a, bp)
+        _, _, _, _, params = build(algo, k, DTYPES[a.dtype], a, bp, e.shape[0])
         return search_fn.lower(params["score_fn"](qb, index)).compile().as_text()
     return search_fn.lower(qb, index).compile().as_text()
 
@@ -360,7 +392,7 @@ def main(argv=None):
 
 def block_params(algo, a, bm_cap, n, d):
     """Block configs to run. Sweep configs are deduped after clamping to the shape."""
-    if algo != "pallas_score":
+    if algo not in PALLAS_ALGOS:
         return [None]
     grid = [(a.bm, a.bn, a.bk)]
     if a.sweep_blocks:

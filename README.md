@@ -12,7 +12,8 @@ Benchmark for exact top-k embedding retrieval on TPU. Question: when does a hand
 | V3 | `pallas_score` | Pallas tiled score kernel (interpret mode on CPU), selection in JAX |
 | A1 | `approx_max_k` | `lax.approx_max_k`, own recall-vs-QPS curve |
 | stage | `score_only`, `select_only` | matmul and selection timed apart (selection over matmul ratio) |
-| V4 | `pallas_fused_topk` | planned: per-tile top-k inside the kernel |
+| V4 | `pallas_fused_topk` | Pallas kernel fuses matmul and per-tile top-k (k <= 128); stage 2 `lax.top_k` over candidates. Exact. `kprime` option |
+| V4b | `pallas_fused_bucket` | per-tile bucketed max over L lanes (TPU-KNN style), approximate, recall measured |
 
 ## Support matrix
 
@@ -24,7 +25,8 @@ What the tests and committed results show today. "CPU interpret" = pytest on CPU
 | `blockwise` | ip, l2, cos; mask; tested | ip (synthetic), l2 (SIFT-1M); no mask, no cos | untested |
 | `pallas_score` | ip, l2, cos; mask; tested; TPU lowering test from CPU | ip (synthetic), l2 (SIFT-1M); no mask, no cos; one block config, no sweep | untested |
 | `approx_max_k` | ip, no mask; recall tested at targets 0.9, 0.95, 0.99 | ip (synthetic), l2 (SIFT-1M); recall target 0.95 only | untested |
-| `pallas_fused_topk` (V4) | not built | not built | untested |
+| `pallas_fused_topk` (V4) | ip, l2, cos; mask; ties; non-aligned N/D; k <= 128; TPU lowering test from CPU | not measured | untested |
+| `pallas_fused_bucket` (V4b) | recall tested (approximate); TPU lowering test from CPU | not measured | untested |
 
 Mask support (`False` = excluded): `jit_topk`, `blockwise` and `pallas_score` are tested with a 30% mask on CPU; `bench/run.py` has no mask option, so no TPU record uses one. GPU: Pallas TPU kernels do not target GPU, and the XLA variants were never run there.
 
