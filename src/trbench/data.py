@@ -18,6 +18,52 @@ def synthetic(m, n, d, *, seed=0, mask_frac=0.0):
     return q, e, mask
 
 
+def _int_rows(rng, n, d, hi):
+    """Integer-valued f32 rows: matmul/norm arithmetic is exact, so ties are genuine."""
+    return rng.integers(-hi, hi + 1, size=(n, d)).astype(np.float32)
+
+
+def tie_heavy(m, n, d, *, seed=0, mode="duplicate", n_unique=7, mask_frac=0.0):
+    """Many exactly tied scores. Integer-valued data keeps ties exact under f32.
+
+    duplicate: db rows drawn (with repeats, shuffled) from `n_unique` distinct rows.
+    quantized: db entries in {-1, 0, 1}; queries in {-1, 0, 1}, so few distinct scores.
+    """
+    rng = np.random.default_rng(seed)
+    if mode == "duplicate":
+        base = _int_rows(rng, min(n_unique, n), d, 3)
+        e = base[rng.integers(0, base.shape[0], size=n)]
+        q = _int_rows(rng, m, d, 3)
+    elif mode == "quantized":
+        e = _int_rows(rng, n, d, 1)
+        q = _int_rows(rng, m, d, 1)
+    else:
+        raise ValueError(f"unknown tie mode {mode!r}")
+    mask = rng.random(n) >= mask_frac if mask_frac > 0 else None
+    return q, e, mask
+
+
+def worst_case(m, n, d, *, kind="all_equal", seed=0):
+    """Adversarial selection inputs (ip/l2-exact in f32 for moderate n).
+
+    all_equal: every db row identical, so every score ties for every query.
+    ascending: score strictly increases with id (best candidates sit at the highest ids).
+    descending: score strictly decreases with id (best candidates sit at the lowest ids).
+    """
+    rng = np.random.default_rng(seed)
+    base = rng.integers(1, 4, size=(1, d)).astype(np.float32)
+    q = np.repeat(base, m, axis=0)
+    if kind == "all_equal":
+        e = np.repeat(base, n, axis=0)
+    elif kind in ("ascending", "descending"):
+        c = np.arange(1, n + 1, dtype=np.float32)
+        c = c if kind == "ascending" else c[::-1]
+        e = c[:, None] * base
+    else:
+        raise ValueError(f"unknown worst-case kind {kind!r}")
+    return q, np.ascontiguousarray(e), None
+
+
 def data_hash(*arrays) -> str:
     h = hashlib.sha256()
     for a in arrays:

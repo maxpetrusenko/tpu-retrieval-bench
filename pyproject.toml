@@ -11,7 +11,7 @@ data = ["h5py"]
 plot = ["matplotlib"]
 
 [dependency-groups]
-dev = ["pytest", "ruff", "nbformat", "h5py", "matplotlib"]
+dev = ["pytest", "ruff", "nbformat", "h5py", "matplotlib", "hypothesis"]
 
 [build-system]
 requires = ["hatchling"]

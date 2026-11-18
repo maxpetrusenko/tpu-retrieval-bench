@@ -1,0 +1,7 @@
+tpu-retrieval-bench hardening tests
+
+The test layout follows patterns from jax-ml/jax tests/pallas (Apache-2.0): shape x k grids
+via pytest parametrize, hypothesis property tests, Pallas interpret mode on CPU. The padding
+and -inf tail invariants follow the idea in vllm-project/tpu-inference kernel tests
+(Apache-2.0), and the result plausibility guard follows the anti reward-hack checks in
+ScalingIntelligence/KernelBench (MIT). No source code was copied from these projects.
