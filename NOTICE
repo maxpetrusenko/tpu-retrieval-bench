@@ -1,0 +1,28 @@
+tpu-retrieval-bench
+
+This repository's own code is under the license in LICENSE (if present). The projects below
+informed the design. Entries marked "adapted" contain text or code adapted from that project,
+which stays under its original license; entries marked "ideas" had nothing copied.
+
+1. AI-Hypercomputer/maxtext, `.gemini/commands/maxtext-review-kernels.md`
+   License: Apache-2.0. Copyright Google LLC. https://github.com/AI-Hypercomputer/maxtext
+   Used in: docs/KERNEL_REVIEW.md (adapted checklist items, rewritten for this repo).
+
+2. openxla/tokamax, docs/benchmarking.md and top-k test practices
+   License: Apache-2.0. Copyright Google LLC. https://github.com/openxla/tokamax
+   Used in: docs/KERNEL_REVIEW.md (benchmark protocol and tie-selection notes; adapted).
+
+3. erikbern/ann-benchmarks
+   License: MIT. https://github.com/erikbern/ann-benchmarks
+   Used in: HDF5 layout, k-nn recall definition, QPS rule (methods only; see docs/BENCHMARK_METHOD.md).
+
+4. jax-ml/jax, jax.experimental.pallas
+   License: Apache-2.0. Copyright The JAX Authors. https://github.com/jax-ml/jax
+   Used in: Pallas TPU kernel and test patterns (patterns only).
+
+5. oliverdutton/tallax
+   No license file; all rights reserved. https://github.com/oliverdutton/tallax
+   Ideas only. No code or text copied.
+
+When code or text is copied from an Apache-2.0, MIT or BSD source, keep its notice in the
+file and add an entry here.
