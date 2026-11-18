@@ -5,6 +5,9 @@ All notable changes. Format: Keep a Changelog; versions follow `pyproject.toml`.
 ## Unreleased
 
 ### Added
+- V4 `pallas_fused_topk` (`src/trbench/pallas_fused.py`): Pallas matmul with in-kernel per-tile top-k (k <= 128, `kprime` option), stage 2 `lax.top_k`; exact. Optional `pallas_fused_bucket` (approximate, TPU-KNN style bins). Registered in `bench/run.py`, CPU interpret and TPU-lowering tests, roofline candidate bytes (k' padded to 128 lanes).
+- `bench/summarize.py`: KernelBench-style fast_p table (p 1.0, 1.25 vs `jit_topk`) and a flag for exact variants with speedup above 10x.
+- Colab notebook: fused variant in the sweeps, block sweep for `pallas_score` and `pallas_fused_topk`, `approx_max_k` recall targets 0.80, 0.90, 0.95, 0.99.
 - `CONTRIBUTING.md`, `docs/KERNEL_REVIEW.md` (Pallas TPU kernel review checklist), `NOTICE`.
 - `.pre-commit-config.yaml` with ruff, file hygiene and a notebook-output check (`scripts/check_notebook_outputs.py`).
 - Issue templates and a pull request template.

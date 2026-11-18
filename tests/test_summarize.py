@@ -29,3 +29,16 @@ def test_render_best_worst_and_flags(tmp_path):
     assert "exact variant recall 0.9000 < 1" in out
     assert "percent_of_peak 120.0 > 100" in out
     assert out.count("pallas_score_topk (bm") == 1  # one row per shape: best config only
+
+
+def test_fast_p_and_reward_hack_flag(tmp_path):
+    recs = [_rec("jit_matmul_topk", 100.0), _rec("pallas_fused_topk", 130.0),
+            _rec("pallas_score_topk", 110.0), _rec("blockwise_topk", 2000.0),
+            _rec("approx_max_k", 900.0, exact=False)]
+    recs[2]["metrics"]["recall"] = 0.5  # wrong: never counts as fast
+    _write(tmp_path, recs)
+    out = summarize.render(summarize.load(tmp_path))
+    assert "| pallas_fused_topk | 1 | 1.000 | 1.000 |" in out
+    assert "| pallas_score_topk | 1 | 0.000 | 0.000 |" in out
+    assert "approx_max_k |" not in out.split("## fast_p")[1].split("## Flags")[0]
+    assert "exact variant speedup 20.0x" in out
