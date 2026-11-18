@@ -36,6 +36,13 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 - **serial** (`--serial N`): VectorDBBench `serial_latency_*` style. N queries (cycling the query pool), batch 1, concurrency 1, each ended by `block_until_ready`. Records `serial_latency_ms` (p50/p95/p99/min/mean), `serial_n`, `serial_qps` (1 / mean). Use N >= 100 so p99 is meaningful; p99 of N < 100 is the max. Separate from batched QPS; never compare the two.
 - Device time lane: see rule 5. Not usable on the Mac mini or CI (CPU); verify on the TPU before quoting it.
 
+## 2.2 Invalid slots (k larger than the valid candidates)
+
+When k exceeds the number of valid candidates (unmasked and not padding), every variant
+(`numpy_ref`, `jit_topk`, `blockwise`, `pallas_score`, `approx_max_k`) fills the tail slots
+with id `-1` and score `-inf`. Valid slots come first, sorted by score descending. Masked
+candidates never appear with a finite score. Tests: `tests/test_padding.py`.
+
 ## 3. Recall definitions
 
 - `knn_recall(found_dists, true_dists, k, eps=1e-3)`: ann-benchmarks definition, the primary number. A returned item counts if its distance is <= the kth true distance + eps. Needs distances in the ann-benchmarks convention (l2: Euclidean distance, cos: 1 - cos). `scores_to_distances` converts our scores (l2 score = 2q.e - |e|^2, so distance = sqrt(|q|^2 - score)).

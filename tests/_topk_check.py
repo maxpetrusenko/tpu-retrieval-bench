@@ -34,8 +34,6 @@ def _pallas(q, e, k, metric, mask):
 
 
 VARIANTS = {"jit_topk": _jit, "blockwise": _blockwise, "pallas": _pallas}
-# jit_topk and the reference return real (masked) ids at -inf slots; the others return -1
-PADS_WITH_MINUS_ONE = {"blockwise", "pallas"}
 
 
 def run(name, q, e, k, metric="ip", mask=None):
@@ -55,10 +53,7 @@ def check_structure(name, s, i, n, mask=None):
         if pad.any():
             first = int(np.argmax(pad))
             assert pad[first:].all(), "-inf score before a finite one"
-        if name in PADS_WITH_MINUS_ONE:
-            assert np.array_equal(row_i == -1, pad), "-1 ids must sit exactly at the -inf tail"
-        else:
-            assert (row_i[~pad] >= 0).all()
+        assert np.array_equal(row_i == -1, pad), "-1 ids must sit exactly at the -inf tail"
     if mask is not None:
         fin = np.isfinite(s)
         got = i[fin]

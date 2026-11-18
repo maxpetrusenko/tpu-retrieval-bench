@@ -1,6 +1,7 @@
 tpu-retrieval-bench
 
-This repository's own code is under the license in LICENSE (if present). The projects below
+Copyright 2026 Max Petrusenko. This repository's own code is under the Apache License 2.0
+(see LICENSE). The projects below
 informed the design. Entries marked "adapted" contain text or code adapted from that project,
 which stays under its original license; entries marked "ideas" had nothing copied.
 

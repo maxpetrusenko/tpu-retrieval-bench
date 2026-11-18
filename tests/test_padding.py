@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from _topk_check import PADS_WITH_MINUS_ONE, VARIANTS, check_structure, run
+from _topk_check import VARIANTS, check_structure, run
 from trbench import data
 from trbench.approx import approx_topk
 from trbench.reference import numpy_ref
@@ -26,13 +26,8 @@ def test_pad_only_at_tail(variant, metric, n, valid, k):
     check_structure(variant, s, i, n, mask)
     assert np.isfinite(s).sum(axis=1).tolist() == [valid] * 3
     assert np.all(np.isneginf(s[:, valid:]))
-    if variant in PADS_WITH_MINUS_ONE:
-        assert np.all(i[:, valid:] == -1)
-        assert np.all(i[:, :valid] >= 0)
-    else:
-        # padding slots hold arbitrary masked ids, never a valid one that was already returned
-        for r in range(3):
-            assert set(i[r, valid:].tolist()).isdisjoint(set(i[r, :valid].tolist()))
+    assert np.all(i[:, valid:] == -1)
+    assert np.all(i[:, :valid] >= 0)
 
 
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
@@ -42,12 +37,12 @@ def test_masked_ids_never_returned_at_finite_score(variant):
     assert mask[i[np.isfinite(s)]].all()
 
 
-def test_reference_pads_with_masked_ids_at_neg_inf():
+def test_reference_pads_with_minus_one_at_neg_inf():
     q, e, _ = data.synthetic(2, 20, 8, seed=0)
     mask = _masked(20, [3, 5, 9])
     s, i = numpy_ref(q, e, 6, mask=mask)
     assert np.all(np.isneginf(s[:, 3:]))
-    assert not mask[i[:, 3:]].any()
+    assert np.all(i[:, 3:] == -1)
     assert mask[i[:, :3]].all()
 
 
@@ -58,3 +53,14 @@ def test_approx_never_returns_masked_with_finite_score():
     fin = np.isfinite(s)
     assert fin.any()
     assert mask[i[fin]].all()
+
+
+@pytest.mark.parametrize("n,valid,k", [(20, 3, 6), (300, 1, 16), (129, 0, 4)])
+def test_approx_pads_with_minus_one_at_neg_inf(n, valid, k):
+    q, e, _ = data.synthetic(3, n, 16, seed=n)
+    mask = _masked(n, np.random.default_rng(valid).choice(n, size=valid, replace=False))
+    s, i = approx_topk(q, e, k, mask=mask)
+    s, i = np.asarray(s), np.asarray(i)
+    assert np.all(np.isneginf(s[:, valid:]))
+    assert np.all(i[:, valid:] == -1)
+    assert np.all(i[:, :valid] >= 0)
