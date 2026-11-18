@@ -1,16 +1,25 @@
 name: ci
 on:
   push:
+    branches: [main]
   pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 env:
   JAX_PLATFORMS: cpu
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Self-hosted runner: never run fork PR code.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, vps-builder]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.12
-      - run: uv sync --python 3.12
+        with:
+          python-version: "3.12"
+      - run: uv sync
       - run: uv run ruff check .
       - run: uv run pytest -q
