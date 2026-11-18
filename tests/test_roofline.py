@@ -14,12 +14,18 @@ def test_peaks():
 
 def test_flops_and_bytes():
     assert rf.flops(2, 3, 4) == 48
-    fused = rf.bytes_moved("blockwise", 16, 1000, 128, 10, "bf16")
-    assert fused == (16 * 128 + 1000 * 128) * 2 + 16 * 10 * 8
+    fused_io = (16 * 128 + 1000 * 128) * 2 + 16 * 10 * 8
     unfused = rf.bytes_moved("jit_topk", 16, 1000, 128, 10, "bf16")
-    assert unfused - fused == 2 * 4 * 16 * 1000
-    assert rf.bytes_moved("pallas_score", 16, 1000, 128, 10) == fused
-    assert rf.bytes_moved("blockwise", 1, 1, 1, 1, "f32") == (1 + 1) * 4 + 8
+    assert unfused - fused_io == 2 * 4 * 16 * 1000
+    score = 2 * 4 * 16 * 1000
+    assert rf.bytes_moved("blockwise", 16, 1000, 128, 10, "bf16") == fused_io + score
+    assert rf.bytes_moved("pallas_score", 16, 1000, 128, 10) == fused_io + score
+    assert rf.bytes_moved("pallas_fused", 16, 1000, 128, 10, "bf16") == fused_io
+    assert rf.bytes_moved("score_only", 16, 1000, 128, 10, "bf16") == (
+        (16 * 128 + 1000 * 128) * 2 + 4 * 16 * 1000
+    )
+    assert rf.bytes_moved("select_only", 16, 1000, 128, 10) == 4 * 16 * 1000 + 16 * 10 * 8
+    assert rf.bytes_moved("pallas_fused", 1, 1, 1, 1, "f32") == (1 + 1) * 4 + 8
 
 
 def test_bad_inputs():
@@ -31,20 +37,27 @@ def test_bad_inputs():
 
 def test_intensity_materialization_lowers_it():
     a = rf.arithmetic_intensity("jit_topk", 1024, 1_000_000, 128, 10)
-    b = rf.arithmetic_intensity("blockwise", 1024, 1_000_000, 128, 10)
+    b = rf.arithmetic_intensity("pallas_fused", 1024, 1_000_000, 128, 10)
     assert a < b
+    assert rf.arithmetic_intensity("blockwise", 1024, 1_000_000, 128, 10) == pytest.approx(a)
+    assert rf.arithmetic_intensity("select_only", 1024, 1_000_000, 128, 10) == 0.0
     assert a < 40  # score write+read bounds intensity near D/4 FLOP/B
 
 
 def test_labels():
     big = (1024, 1_000_000, 128, 10)
     assert rf.label("jit_topk", *big, "bf16", V5E) == "HBM-bound"
-    assert rf.label("blockwise", *big, "bf16", V5E) == "MXU-bound"
-    assert rf.label("blockwise", 1, 1_000_000, 128, 10, "bf16", V5E) == "HBM-bound"
-    assert rf.label("blockwise", *big, "bf16", V5E, select_time_s=2.0, matmul_time_s=1.0) == (
+    assert rf.label("blockwise", *big, "bf16", V5E) == "HBM-bound"
+    assert rf.label("pallas_fused", *big, "bf16", V5E) == "MXU-bound"
+    assert rf.label("pallas_fused", 1, 1_000_000, 128, 10, "bf16", V5E) == "HBM-bound"
+    assert rf.label("select_only", *big, "bf16", V5E) == "unknown"
+    assert rf.label("select_only", *big, "bf16", V5E, select_time_s=2.0, matmul_time_s=1.0) == (
         "VPU/COP-bound"
     )
-    assert rf.label("blockwise", *big, "bf16", V5E, select_time_s=0.5, matmul_time_s=1.0) == (
+    assert rf.label("pallas_fused", *big, "bf16", V5E, select_time_s=2.0, matmul_time_s=1.0) == (
+        "VPU/COP-bound"
+    )
+    assert rf.label("pallas_fused", *big, "bf16", V5E, select_time_s=0.5, matmul_time_s=1.0) == (
         "MXU-bound"
     )
     assert rf.label("jit_topk", *big, "bf16", "cpu") == "unknown"

@@ -1,4 +1,8 @@
-"""CLI sweep: runs algos over shapes, writes results/<platform>/synthetic/k<k>/<algo>/<params>.json."""
+"""CLI sweep: runs algos over shapes, writes results/<platform>/<dataset>/k<k>/<algo>/<params>.json.
+
+--dataset synthetic (default) sweeps --m/--n/--d. An ann-benchmarks name takes shapes and metric
+from the HDF5 file (--n-train/--n-test subset it); recall uses the file ground truth.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 
-from trbench import data, env, records, reference, timing
+from trbench import data, datasets, env, records, reference, roofline, timing
 from trbench.approx import make_approx
 from trbench.blockwise import make_blockwise, make_score_only, make_select_only
 from trbench.jit_topk import make_jit_topk
@@ -27,6 +31,11 @@ def parse(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--algos", default="jit_topk", help="comma list: numpy_ref,jit_topk,blockwise,pallas_score,approx_max_k,"
                    "score_only,select_only")
+    p.add_argument("--dataset", default="synthetic",
+                   choices=["synthetic", *datasets.DATASETS], help="synthetic or ann-benchmarks")
+    p.add_argument("--data-dir", default=None, help="dir with <dataset>.hdf5 (default repo data/)")
+    p.add_argument("--n-train", type=int, default=None, help="dataset: use first N train rows")
+    p.add_argument("--n-test", type=int, default=None, help="dataset: use first N test rows")
     p.add_argument("--m", type=ints, default=[16])
     p.add_argument("--n", type=ints, default=[65536])
     p.add_argument("--d", type=ints, default=[128])
@@ -49,7 +58,7 @@ def parse(argv=None):
     return p.parse_args(argv)
 
 
-MATERIALIZING = {"jit_topk", "approx_max_k", "score_only", "select_only"}
+MATERIALIZING = roofline.MATERIALIZING | {"score_only", "select_only"}
 SWEEP = {"bm": [128, 256, 512], "bn": [256, 512, 1024], "bk": [128, 256, 512]}
 
 
@@ -87,11 +96,32 @@ FACTORIES = {"jit_topk": _jit, "blockwise": _blockwise, "pallas_score": _pallas,
              "approx_max_k": _approx, "score_only": _score_only, "select_only": _select_only}
 
 
-def run_one(algo, m, n, d, k, a, hw, git, bp=None):
+def get_inputs(a, m, n, d, ann=None):
+    """(queries, db, truth, dataset_hash). truth = ann dict or None (synthetic)."""
+    if ann is not None:
+        return ann["test"], ann["train"], ann, ann["hash"]
     q, e, _ = data.synthetic(m, n, d, seed=a.seed)
+    return q, e, None, data.data_hash(q, e)
+
+
+def compute_recall(a, k, q, ann, got_scores, ref_scores):
+    """Dataset: ann-benchmarks knn_recall vs file truth; synthetic: threshold recall vs oracle."""
+    if got_scores is None:
+        return None
+    if ann is not None:
+        dist = datasets.scores_to_distances(got_scores, a.metric, q)
+        return datasets.knn_recall(dist, ann["distances"], k)
+    if ref_scores is None:
+        return None
+    return data.recall_at_k(ref_scores, got_scores, eps=1e-2 if a.dtype == "bf16" else 1e-4)
+
+
+def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
+    q, e, truth, dhash = get_inputs(a, m, n, d, ann)
+    m, n = q.shape[0], e.shape[0]
     dtype = DTYPES[a.dtype]
     ref_scores = None
-    if m * n * d <= REF_LIMIT:
+    if truth is None and m * n * d <= REF_LIMIT:
         ref_scores, _ = reference.numpy_ref(q, e, k, metric=a.metric)
     hlo = None
     if algo == "numpy_ref":
@@ -118,15 +148,19 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None):
             hlo = res["compiled"].as_text()
     else:
         raise SystemExit(f"unknown algo {algo}")
-    recall = None
-    if ref_scores is not None and got_scores is not None:
-        recall = data.recall_at_k(ref_scores, got_scores, eps=1e-2 if a.dtype == "bf16" else 1e-4)
+    recall = compute_recall(a, k, q, truth, got_scores, ref_scores)
     best = min(res["times_s"])
+    in_roofline = algo in roofline.VARIANTS
+    dkind = hw["device_kind"]
+    rf_bytes = roofline.bytes_moved(algo, m, n, d, k, a.dtype) if in_roofline else None
+    rf_ai = roofline.arithmetic_intensity(algo, m, n, d, k, a.dtype) if in_roofline else None
+    rf_label = roofline.label(algo, m, n, d, k, a.dtype, dkind) if in_roofline else "unknown"
+    has_matmul = algo != "select_only"
     rec = records.build_record(
         dataset={
-            "name": "synthetic", "source_url": None, "n_train": n, "n_test": m, "dim": d,
+            "name": a.dataset, "source_url": None, "n_train": n, "n_test": m, "dim": d,
             "distance": a.metric, "dtype_stored": "float32", "dtype_compute": a.dtype,
-            "seed": a.seed, "hash": data.data_hash(q, e),
+            "seed": a.seed, "hash": dhash,
         },
         algorithm={"name": name, "params": {"precision": a.dtype, **params}, "exact": exact},
         query={"k": k, "batch_size": m, "mode": "batch", "n_queries_timed": m,
@@ -142,10 +176,21 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None):
             "compile_time_s": res["compile_time_s"],
             "index_size_bytes": int(e.nbytes),
             "score_matrix_bytes": 4 * m * n if algo in MATERIALIZING else None,
+            "bytes_moved": rf_bytes,
+            "arithmetic_intensity": rf_ai,
+            "roofline_label": rf_label,
+            "selection_time_ms": best * 1e3 if algo == "select_only" else None,
+            "matmul_time_ms": best * 1e3 if algo == "score_only" else None,
+            "selection_over_matmul": None,
         },
         git=git,
         timing_extra={"xla_flags": __import__("os").environ.get("XLA_FLAGS", "")},
+        matmul=has_matmul,
     )
+    if has_matmul:
+        rec["metrics"]["percent_of_peak"] = roofline.percent_of_peak(
+            rec["metrics"]["flops_achieved"], dkind
+        )
     params = f"m{m}_n{n}_d{d}_{a.metric}_{a.dtype}"
     if algo == "blockwise":
         params += f"_B{a.block_size}"
@@ -154,32 +199,76 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None):
     elif algo == "approx_max_k":
         params += f"_r{a.recall_target}"
     path = records.write_record(
-        records.result_path(a.out, hw["platform"], "synthetic", k, algo, params), rec
+        records.result_path(a.out, hw["platform"], a.dataset, k, algo, params), rec
     )
     if hlo is not None:
         (path.parent / f"{params}.hlo.txt").write_text(hlo)
     return path, rec
 
 
+def load_dataset(a):
+    """Load the ann-benchmarks file once; metric comes from the dataset, not --metric."""
+    name = a.dataset
+    ann = datasets.load_ann(
+        Path(a.data_dir) / f"{name}.hdf5" if a.data_dir else name,
+        n_train=a.n_train, n_test=a.n_test,
+    )
+    ann["hash"] = data.data_hash(ann["train"], ann["test"])
+    a.metric = ann["metric"]
+    return ann
+
+
+def link_stages(stage, a, dkind):
+    """R5: when score_only and select_only ran on the same shape, write the ratio into both."""
+    for recs in stage.values():
+        if "score_only" not in recs or "select_only" not in recs:
+            continue
+        (sp, sc), (lp, se) = recs["score_only"], recs["select_only"]
+        t_mm = sc["metrics"]["best_search_time_s"]
+        t_sel = se["metrics"]["best_search_time_s"]
+        for path, rec, algo in ((sp, sc, "score_only"), (lp, se, "select_only")):
+            mt = rec["metrics"]
+            mt["selection_time_ms"], mt["matmul_time_ms"] = t_sel * 1e3, t_mm * 1e3
+            mt["selection_over_matmul"] = t_sel / t_mm
+            ds = rec["dataset"]
+            mt["roofline_label"] = roofline.label(
+                algo, ds["n_test"], ds["n_train"], ds["dim"], rec["query"]["k"], a.dtype, dkind,
+                select_time_s=t_sel, matmul_time_s=t_mm,
+            )
+            records.write_record(path, rec)
+
+
 def main(argv=None):
     a = parse(argv)
     hw, git = env.hardware_info(), env.git_info(Path(__file__).resolve().parents[1])
-    for algo, m, n, d, k in itertools.product(
-        a.algos.split(","), a.m, a.n, a.d, a.k
-    ):
-        bps = [(a.bm, a.bn, a.bk)]
-        if algo == "pallas_score" and a.sweep_blocks:
-            bps = list(itertools.product(SWEEP["bm"], SWEEP["bn"], SWEEP["bk"]))
-        for bp in bps:
-            report(algo, *run_one(algo, m, n, d, k, a, hw, git, bp))
+    ann = load_dataset(a) if a.dataset != "synthetic" else None
+    shapes = [(len(ann["test"]), len(ann["train"]), ann["train"].shape[1])] if ann else None
+    stage = {}
+    for algo, k in itertools.product(a.algos.split(","), a.k):
+        for m, n, d in shapes or itertools.product(a.m, a.n, a.d):
+            bps = [(a.bm, a.bn, a.bk)]
+            if algo == "pallas_score" and a.sweep_blocks:
+                bps = list(itertools.product(SWEEP["bm"], SWEEP["bn"], SWEEP["bk"]))
+            for bp in bps:
+                path, rec = run_one(algo, m, n, d, k, a, hw, git, bp, ann)
+                report(algo, path, rec)
+                if algo in ("score_only", "select_only"):
+                    stage.setdefault((m, n, d, k), {})[algo] = (path, rec)
+    link_stages(stage, a, hw["device_kind"])
+    for recs in stage.values():
+        if len(recs) == 2:
+            r = recs["select_only"][1]["metrics"]["selection_over_matmul"]
+            print(f"selection_over_matmul={r:.3f}")
 
 
 def report(algo, path, rec):
     mt = rec["metrics"]
+    fl = mt["flops_achieved"]
     print(
         f"{path}\n  algo={algo} compile_time_s={mt['compile_time_s']:.4f} "
         f"warm_p50_ms={mt['latency_ms_per_batch']['p50']:.4f} recall={mt['recall']} "
-        f"flops={mt['flops_achieved']:.3e} pct_peak={mt['percent_of_peak']}"
+        f"flops={'null' if fl is None else format(fl, '.3e')} pct_peak={mt['percent_of_peak']} "
+        f"roofline={mt['roofline_label']}"
     )
 
 

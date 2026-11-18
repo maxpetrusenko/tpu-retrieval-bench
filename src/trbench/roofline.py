@@ -21,9 +21,14 @@ PEAKS: dict[str, Peak] = {
     "TPU v6 lite": Peak(920e12, 1640e9),
 }
 
-VARIANTS = ("jit_topk", "blockwise", "pallas_score", "pallas_fused", "approx_max_k")
-# variants that write then re-read the full M x N f32 score matrix through HBM
-MATERIALIZING = frozenset({"jit_topk", "approx_max_k"})
+VARIANTS = (
+    "jit_topk", "blockwise", "pallas_score", "pallas_fused", "approx_max_k",
+    "score_only", "select_only",
+)
+# variants that write then re-read the full M x N f32 score matrix through HBM. blockwise and
+# pallas_score write all M*N scores to HBM (in chunks) and read them back for top_k. Only a
+# future pallas_fused (V4, per-tile top-k in VMEM) avoids it.
+MATERIALIZING = frozenset({"jit_topk", "approx_max_k", "blockwise", "pallas_score"})
 LABELS = ("MXU-bound", "HBM-bound", "VPU/COP-bound", "unknown")
 _ITEMSIZE = {"bf16": 2, "bfloat16": 2, "f16": 2, "float16": 2, "f32": 4, "float32": 4}
 
@@ -48,19 +53,28 @@ def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype="bf16") -> f
     """HBM bytes per search call.
 
     Reads Q (M*D) and E (N*D) in `dtype`, writes top-k (M*k f32 scores + int32 ids).
-    jit_topk / approx_max_k additionally write and re-read the M x N f32 score matrix
-    (2 * 4 * M * N). blockwise / pallas variants keep score tiles on chip (not counted).
+    jit_topk, approx_max_k, blockwise and pallas_score additionally write and re-read the
+    M x N f32 score matrix (2 * 4 * M * N). Only pallas_fused avoids it.
+    Stage helpers: score_only reads Q, E and writes the scores (no top-k, no re-read);
+    select_only reads the scores and writes the top-k (no Q, E).
     """
     if variant not in VARIANTS:
         raise ValueError(f"unknown variant {variant!r}; expected one of {VARIANTS}")
-    total = (m * d + n * d) * _itemsize(dtype) + m * k * 8
+    topk = m * k * 8
+    if variant == "score_only":
+        return float((m * d + n * d) * _itemsize(dtype) + 4 * m * n)
+    if variant == "select_only":
+        return float(4 * m * n + topk)
+    total = (m * d + n * d) * _itemsize(dtype) + topk
     if variant in MATERIALIZING:
         total += 2 * 4 * m * n
     return float(total)
 
 
 def arithmetic_intensity(variant, m, n, d, k, dtype="bf16") -> float:
-    """FLOP per HBM byte."""
+    """FLOP per HBM byte (select_only does no matmul: 0.0)."""
+    if variant == "select_only":
+        return 0.0
     return flops(m, n, d) / bytes_moved(variant, m, n, d, k, dtype)
 
 
@@ -90,6 +104,10 @@ def label(
     """
     p = peak_for(device_kind)
     if p is None:
+        return "unknown"
+    if variant == "select_only":  # no matmul; only the measured stage ratio can classify it
+        if select_time_s is not None and matmul_time_s is not None:
+            return "VPU/COP-bound" if select_time_s > matmul_time_s else "HBM-bound"
         return "unknown"
     if select_time_s is not None and matmul_time_s is not None and select_time_s > matmul_time_s:
         return "VPU/COP-bound"

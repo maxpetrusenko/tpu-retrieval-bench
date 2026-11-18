@@ -15,7 +15,7 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 | Datasets SIFT-1M (L2) and GloVe-100 (cosine), 10K queries | TPU-KNN (arXiv 2206.14286) | `bench/download.py sift|glove`; GIST-960 as a high-dim stress |
 | Three ceilings: MXU FLOP/s, HBM B/s, VPU/COP ops/s | TPU-KNN s4 (papers.md s1) | `roofline.label` |
 | Exact top-k time as a multiple of matmul time | Samaga et al. (27x on v5e, papers.md s2) | stage-split timing (S2) |
-| Fused vs unfused: score matrix never written to HBM | Faiss GPU (>= 25% faster fused), TPU-KNN | `roofline.bytes_moved` materialization term |
+| Fused vs unfused: score matrix never written to HBM | Faiss GPU (>= 25% faster fused), TPU-KNN | `roofline.bytes_moved` materialization term; only a future `pallas_fused` (V4) is unfused-free |
 | "Peak possible" = max(GEMM at peak, tile traffic at peak BW) | Faiss GPU paper (papers.md s3) | report % of that bound next to % of FLOP/s peak |
 
 ## 2. Timing rules
@@ -31,6 +31,7 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 
 - `knn_recall(found_dists, true_dists, k, eps=1e-3)`: ann-benchmarks definition, the primary number. A returned item counts if its distance is <= the kth true distance + eps. Needs distances in the ann-benchmarks convention (l2: Euclidean distance, cos: 1 - cos). `scores_to_distances` converts our scores (l2 score = 2q.e - |e|^2, so distance = sqrt(|q|^2 - score)).
 - `id_set_recall(found_ids, true_ids, k)`: intersection of id sets over k. Stricter: with ties or bf16 rounding an exact variant can score < 1.0 here while scoring 1.0 on `knn_recall`. Report both for exact variants; gate CI on `knn_recall` and on V0 score agreement within bf16 tolerance.
+- `bench/run.py --dataset <name>` computes recall as `knn_recall` against the file's `distances` (or recomputed truth when `--n-train` subsets); the metric comes from the dataset attribute, overriding `--metric`.
 - Subsetting the corpus (`n_train`) invalidates stored ground truth; `load_ann` recomputes it by brute force on the subset.
 - Faiss `bench_gpu_*` recall is 1-recall@r against the single nearest neighbor. Do not mix it with k-nn recall.
 - Exact variants must reach 1.0; `approx_max_k` is reported on its own recall-vs-QPS curve over `recall_target`, never ranked against exact points.
@@ -40,7 +41,10 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 `roofline.label` returns MXU-bound, HBM-bound, VPU/COP-bound or unknown.
 
 - Peaks (per TensorCore, JAX Pallas hardware reference, jax-pallas-tpu.md s4): v5e (`TPU v5 lite`) 197 TFLOP/s bf16, 820 GB/s; v6e (`TPU v6 lite`) 920 TFLOP/s, 1640 GB/s. Other chips return `unknown`; they are not keyed because the table is per TensorCore and multi-TC chips were not verified at chip level.
-- FLOPs = 2*M*N*D. Bytes = (M*D + N*D) * itemsize + M*k*8. `jit_topk` and `approx_max_k` add 2*4*M*N (write plus re-read of the f32 score matrix). `blockwise` and the Pallas variants keep score tiles on chip and do not count it.
+- FLOPs = 2*M*N*D. Bytes = (M*D + N*D) * itemsize + M*k*8. `jit_topk`, `approx_max_k`, `blockwise` and `pallas_score` all add 2*4*M*N: they write all M*N f32 scores to HBM (blockwise and the Pallas score kernel do it in chunks) and read them back for `top_k`. Only a future `pallas_fused` (V4, per-tile top-k kept in VMEM) skips that traffic, so today every measured variant is charged for it and the fused/unfused ablation (R4) needs V4.
+- Stage helpers: `score_only` = reads Q, E and writes M*N*4 bytes; `select_only` = reads M*N*4 and writes the top-k.
+- Every record carries `roofline_label`, `percent_of_peak`, `bytes_moved` and `arithmetic_intensity` in `metrics`. `select_only` does no matmul, so its `flops_achieved` and `percent_of_peak` are null; it records `selection_time_ms` instead.
+- R5 ratio: when one `bench/run.py` invocation runs `score_only` and `select_only` on the same shape, both records get `selection_time_ms`, `matmul_time_ms` and `selection_over_matmul` (best selection time divided by best matmul time), and their label is recomputed from it.
 - Rule: if measured selection time exceeds matmul time, label VPU/COP-bound (TPU-KNN: exact k-selection cannot run at peak FLOP/s). Otherwise the larger of ideal MXU time and ideal HBM time wins.
 - Limits: ideal-time comparison ignores VPU cost unless stage times are passed in; f32 compute uses the bf16 peak, so f32 %-of-peak is a lower bound on efficiency. Ridge point v5e ~240 FLOP/B.
 

@@ -20,16 +20,18 @@ def peak_flops(device_kind: str):
     return None
 
 
-def build_record(*, dataset, algorithm, query, hardware, metrics, timing_extra=None, git):
+def build_record(*, dataset, algorithm, query, hardware, metrics, timing_extra=None, git,
+                 matmul=True):
+    """matmul=False (select_only): no matmul FLOP/s or percent_of_peak, all set to null."""
     best_s = metrics["best_search_time_s"]
     m, n, d = dataset["n_test"], dataset["n_train"], dataset["dim"]
-    flops = 2.0 * m * n * d / best_s
-    peak = peak_flops(hardware["device_kind"])
+    flops = 2.0 * m * n * d / best_s if matmul else None
+    peak = peak_flops(hardware["device_kind"]) if matmul else None
     metrics = dict(metrics)
     metrics.update(
         flops_achieved=flops,
         flops_peak=peak,
-        percent_of_peak=(100.0 * flops / peak) if peak else None,
+        percent_of_peak=(100.0 * flops / peak) if flops and peak else None,
     )
     timing = {
         "clock": "perf_counter",
