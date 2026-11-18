@@ -2,6 +2,8 @@
 name = "trbench"
 version = "0.1.0"
 description = "Exact top-k retrieval benchmark on TPU: XLA vs Pallas"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = ["jax>=0.12", "numpy>=2.2"]
 
@@ -11,7 +13,7 @@ data = ["h5py"]
 plot = ["matplotlib"]
 
 [dependency-groups]
-dev = ["pytest", "ruff", "nbformat", "h5py", "matplotlib"]
+dev = ["pytest", "ruff", "nbformat", "h5py", "matplotlib", "hypothesis"]
 
 [build-system]
 requires = ["hatchling"]

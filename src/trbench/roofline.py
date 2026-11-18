@@ -58,7 +58,7 @@ def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype="bf16", *,
     both default to `dtype`), writes top-k (M*k f32 scores + int32 ids).
     jit_topk, approx_max_k, blockwise and pallas_score additionally write and re-read the
     M x N f32 score matrix (2 * 4 * M * N). Only pallas_fused avoids it. It adds the candidate
-    write M * n_tiles * kprime * 8 when `n_tiles` (db column tiles) and `kprime` (candidates
+    write M * n_tiles * round_up(kprime, 128) * 8 (kernel pads each output block to 128 lanes) when `n_tiles` (db column tiles) and `kprime` (candidates
     per tile: k for exact top-k, L lanes for the bucket variant) are given; omit both for the
     ideal fully fused bound.
     Stage helpers: score_only reads Q, E and writes the scores (no top-k, no re-read);
@@ -78,7 +78,7 @@ def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype="bf16", *,
     if variant in MATERIALIZING:
         total += 2 * 4 * m * n
     if variant == "pallas_fused" and n_tiles and kprime:
-        total += m * n_tiles * kprime * 8
+        total += m * n_tiles * (-(-kprime // 128) * 128) * 8
     return float(total)
 
 

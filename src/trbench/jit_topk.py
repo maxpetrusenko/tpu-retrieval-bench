@@ -9,13 +9,13 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
-from trbench._common import dense_scores, prepare_dense
+from trbench._common import dense_scores, mark_invalid, prepare_dense
 
 
 def search_impl(queries, idx, *, k, metric, compute_dtype):
     s = dense_scores(queries, idx, metric=metric, compute_dtype=compute_dtype)
     vals, ids = lax.top_k(s, k)
-    return vals, ids.astype(jnp.int32)
+    return mark_invalid(vals, ids.astype(jnp.int32))
 
 
 def make_jit_topk_parts(k, *, metric="ip", compute_dtype=jnp.bfloat16, has_mask=False):

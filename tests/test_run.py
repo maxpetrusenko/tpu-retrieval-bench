@@ -44,9 +44,9 @@ def test_fused_algos_record_candidate_bytes(tmp_path):
     ft, fb, ps = (by["pallas_fused_topk"], by["pallas_fused_bucket"], by["pallas_score_topk"])
     assert ft["algorithm"]["exact"] is True and fb["algorithm"]["exact"] is False
     assert ft["metrics"]["recall"] == 1.0 and fb["metrics"]["recall"] >= 0.9
-    # 600 -> 5 tiles of 128; bytes = io + M * n_tiles * k' * 8, no M*N score traffic
+    # 600 -> 5 tiles of 128; bytes = io + M * n_tiles * round_up(k', 128) * 8, no M*N score traffic
     io = ps["metrics"]["bytes_moved"] - 2 * 4 * 4 * 600
-    assert ft["metrics"]["bytes_moved"] == io + 4 * 5 * 5 * 8
+    assert ft["metrics"]["bytes_moved"] == io + 4 * 5 * 128 * 8  # k'=5 padded to 128 lanes
     assert fb["metrics"]["bytes_moved"] == io + 4 * 5 * 128 * 8
     assert ft["metrics"]["score_matrix_bytes"] is None
 

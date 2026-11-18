@@ -26,9 +26,9 @@ def test_flops_and_bytes():
     )
     assert rf.bytes_moved("select_only", 16, 1000, 128, 10) == 4 * 16 * 1000 + 16 * 10 * 8
     assert rf.bytes_moved("pallas_fused", 1, 1, 1, 1, "f32") == (1 + 1) * 4 + 8
-    # candidates: M * n_tiles * k' * 8, still no M*N score traffic
+    # candidates: M * n_tiles * round_up(k', 128) * 8, still no M*N score traffic
     assert rf.bytes_moved("pallas_fused", 16, 1000, 128, 10, "bf16", n_tiles=2, kprime=10) == (
-        fused_io + 16 * 2 * 10 * 8)
+        fused_io + 16 * 2 * 128 * 8)  # kprime 10 pads to 128
 
 
 def test_bad_inputs():

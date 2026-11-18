@@ -38,6 +38,11 @@ def init_running(m, k):
     return jnp.full((m, k), -jnp.inf, jnp.float32), jnp.full((m, k), -1, jnp.int32)
 
 
+def mark_invalid(vals, ids):
+    """Invalid-slot contract: every -inf score slot carries id -1."""
+    return vals, jnp.where(jnp.isneginf(vals), -1, ids).astype(jnp.int32)
+
+
 def block_topk(s, k, offset):
     """top-k of a (M, W) score block with global ids (offset + local)."""
     kb = min(k, s.shape[1])

@@ -64,6 +64,18 @@ def parse(argv=None):
     p.add_argument("--batch-size", type=int, default=1024,
                    help="queries per search call; a pass chunks M queries into batches so "
                    "scores stay <= ~4 GB. QPS = all queries / pass time")
+    p.add_argument("--timing", default="wall", choices=["wall", "loop", "both"],
+                   help="wall = per-call block_until_ready (headline); loop = in-jit fori_loop "
+                   "repeat, device-amortized per iteration (headline); both = wall headline, "
+                   "loop recorded next to it")
+    p.add_argument("--loop-iters", type=int, default=16,
+                   help="iterations per dispatch in loop mode")
+    p.add_argument("--serial", type=int, default=0,
+                   help="also time N queries one at a time (batch 1, concurrency 1); records "
+                   "p50/p95/p99 per query")
+    p.add_argument("--device-time", action="store_true",
+                   help="trace a few warm calls with jax.profiler and record device time "
+                   "(null off-TPU/GPU)")
     p.add_argument("--dump-hlo", action="store_true")
     return p.parse_args(argv)
 
@@ -184,7 +196,15 @@ def time_numpy(q, e, k, a):
         got, _ = reference.numpy_ref(q, e, k, metric=a.metric)
         times.append(time.perf_counter() - t0)
     times = times[a.warmup :]
-    return {"compile_time_s": 0.0, "times_s": times, "latency_ms": timing.summarize(times)}, got
+    res = {"compile_time_s": 0.0, "times_s": times, "latency_ms": timing.summarize(times)}
+    if a.serial:
+        st = []
+        for i in range(a.serial):
+            t0 = time.perf_counter()
+            reference.numpy_ref(q[i % len(q) : i % len(q) + 1], e, k, metric=a.metric)
+            st.append(time.perf_counter() - t0)
+        res["serial"] = {"times_s": st, "latency_ms": timing.summarize(st)}
+    return res, got
 
 
 def time_jax(algo, q, e, k, a, bp):
@@ -207,8 +227,27 @@ def time_jax(algo, q, e, k, a, bp):
     else:
         def make_args(i):
             return (qb[i], index)
-    res = timing.time_batched(search_fn, make_args, len(qb), warmup=a.warmup,
-                              repetitions=a.reps, keep_out=algo not in STAGE_ONLY)
+    keep = algo not in STAGE_ONLY
+    wall = loop = None
+    if a.timing in ("wall", "both"):
+        wall = timing.time_batched(search_fn, make_args, len(qb), warmup=a.warmup,
+                                   repetitions=a.reps, keep_out=keep)
+    if a.timing in ("loop", "both"):
+        loop = timing.time_batched_loop(search_fn, make_args, len(qb), inner=a.loop_iters,
+                                        warmup=a.warmup, repetitions=a.reps)
+    if wall is not None:
+        res = dict(wall)
+    else:  # loop headline: the loop returns a checksum, so outputs come from one untimed pass
+        outs = [search_fn(*make_args(i)) for i in range(len(qb))] if keep else None
+        res = {**loop, "outs": outs}
+    res["wall"], res["loop"] = wall, loop
+    if a.serial:
+        def serial_args(i):
+            q1 = qd[i % m : i % m + 1]
+            return (score_fn(q1, index),) if score_fn is not None else (q1, index)
+        res["serial"] = timing.time_serial(search_fn, serial_args, a.serial, warmup=a.warmup)
+    if a.device_time:
+        res["device"] = timing.device_time(search_fn, *make_args(0), calls=a.reps)
     got = None
     if res["outs"] is not None:
         got = np.concatenate([jax.device_get(o[0]) for o in res["outs"]], axis=0)
@@ -234,12 +273,14 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
         raise SystemExit(f"unknown algo {algo}")
     recall, n_recall_q, recall_eps2 = compute_recall(a, k, q, e, truth, got_scores)
     best = min(res["times_s"])
+    mode = "wall" if algo == "numpy_ref" else a.timing
+    tm = timing_metrics(res, m)
     rf_algo = "pallas_fused" if algo in FUSED else algo
     in_roofline = rf_algo in roofline.VARIANTS
     dkind = hw["device_kind"]
     # db is stored in compute dtype after prepare; queries arrive as f32
     dt = {"q_dtype": "f32", "db_dtype": a.dtype}
-    if algo in FUSED:  # candidates written per db tile: M * n_tiles * k' * 8
+    if algo in FUSED:  # candidates written per db tile: M * n_tiles * round_up(k', 128) * 8
         bn = resolve_blocks(bs, n, d, bp[0], bp[1], bp[2], a.chunk)[1]
         dt.update(n_tiles=-(-n // bn), kprime=params.get("kprime", params.get("lanes")))
     rf_bytes = sum(roofline.bytes_moved(rf_algo, s, n, d, k, a.dtype, **dt) for s in sizes
@@ -279,9 +320,18 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
             "selection_time_ms": best * 1e3 if algo == "select_only" else None,
             "matmul_time_ms": best * 1e3 if algo == "score_only" else None,
             "selection_over_matmul": None,
+            **tm,
         },
         git=git,
-        timing_extra={"xla_flags": os.environ.get("XLA_FLAGS", "")},
+        timing_extra={
+            "xla_flags": os.environ.get("XLA_FLAGS", ""),
+            "mode": mode,
+            "headline": "loop" if mode == "loop" else "wall",
+            "loop_iters": a.loop_iters if mode in ("loop", "both") else None,
+            "loop_checksum": timing.LOOP_CHECKSUM if mode in ("loop", "both") else None,
+            "serial_n": a.serial or None,
+            "device_time": bool(a.device_time),
+        },
         matmul=has_matmul,
         compute_dtype=a.dtype,
     )
@@ -292,6 +342,31 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
         hlo = compile_hlo(algo, q, e, k, a, bp)
         (path.parent / f"{params_str(algo, m, n, d, a, bp)}.hlo.txt").write_text(hlo)
     return path, rec
+
+
+def timing_metrics(res, m):
+    """Record fields for the wall / loop / serial / device-time lanes (None when not run)."""
+    wall, loop = res.get("wall"), res.get("loop")
+    if wall is None and loop is None:  # numpy_ref: wall only
+        wall = res
+    bw = min(wall["times_s"]) if wall else None
+    bl = min(loop["times_s"]) if loop else None
+    ser, dev = res.get("serial"), res.get("device") or {}
+    sl = ser["latency_ms"] if ser else None
+    return {
+        "best_search_time_s_wall": bw,
+        "best_search_time_s_loop": bl,
+        "qps_wall": m / bw if bw else None,
+        "qps_loop": m / bl if bl else None,
+        "search_time_s_all_loop": loop["times_s"] if loop else None,
+        "latency_ms_per_batch_loop": loop["latency_ms"] if loop else None,
+        "serial_latency_ms": sl,
+        "serial_n": len(ser["times_s"]) if ser else None,
+        "serial_qps": 1e3 / sl["mean"] if sl else None,
+        "device_time_ms": dev.get("device_time_ms"),
+        "device_time_source": dev.get("device_time_source"),
+        "device_time_note": dev.get("device_time_note"),
+    }
 
 
 def compile_hlo(algo, q, e, k, a, bp):

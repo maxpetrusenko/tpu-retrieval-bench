@@ -209,7 +209,8 @@ def search_fused(queries, idx, *, k, metric, compute_dtype, bm, interpret, mode,
     else:
         carry = chunk(idx.e_rem, idx.aux_rem, 0)
     vals, ids = carry
-    ids = jnp.where(ids >= n, -1, ids)  # padded columns are never real results
+    # padded columns and masked (-inf) slots are never real results: id -1 like every variant
+    ids = jnp.where((ids >= n) | jnp.isneginf(vals), -1, ids)
     return vals[:m], ids[:m]
 
 

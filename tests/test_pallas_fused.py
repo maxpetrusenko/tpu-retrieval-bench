@@ -35,7 +35,7 @@ def test_f32_exact_ids(m, n, d, metric, use_mask, k):
 
 def test_heavy_mask_inf_ids_match_oracle():
     q, e, mask = data.synthetic(4, 400, 64, seed=5, mask_frac=0.97)
-    rs, ri = numpy_ref(q, e, 50, mask=mask)  # fewer than 50 valid: -inf tail with real ids
+    rs, ri = numpy_ref(q, e, 50, mask=mask)  # fewer than 50 valid: -inf tail with id -1
     s, i = pallas_fused_topk(q, e, 50, mask=mask, **BLK)
     np.testing.assert_array_equal(np.asarray(i), ri)
     np.testing.assert_array_equal(np.isneginf(np.asarray(s)), np.isneginf(rs))
