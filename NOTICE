@@ -24,5 +24,11 @@ which stays under its original license; entries marked "ideas" had nothing copie
    No license file; all rights reserved. https://github.com/oliverdutton/tallax
    Ideas only. No code or text copied.
 
+6. Hardening tests (tests/): shape x k grids, hypothesis property tests and Pallas interpret mode
+   follow jax-ml/jax tests/pallas (Apache-2.0); the padding and -inf tail invariants follow the
+   idea in vllm-project/tpu-inference kernel tests (Apache-2.0); the result plausibility guard
+   follows the anti reward-hack checks in ScalingIntelligence/KernelBench (MIT). No source code
+   was copied from these projects.
+
 When code or text is copied from an Apache-2.0, MIT or BSD source, keep its notice in the
 file and add an entry here.
