@@ -7,9 +7,11 @@ dependencies = ["jax>=0.12", "numpy>=2.2"]
 
 [project.optional-dependencies]
 hdf5 = ["h5py"]
+data = ["h5py"]
+plot = ["matplotlib"]
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "nbformat", "h5py", "matplotlib"]
 
 [build-system]
 requires = ["hatchling"]
@@ -24,4 +26,5 @@ pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["notebooks"]
 src = ["src", "bench", "tests"]
