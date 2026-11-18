@@ -1,0 +1,16 @@
+name: ci
+on:
+  push:
+  pull_request:
+env:
+  JAX_PLATFORMS: cpu
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --python 3.12
+      - run: uv run ruff check .
+      - run: uv run pytest -q

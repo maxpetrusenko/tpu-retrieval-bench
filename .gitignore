@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.hdf5
+data/
+*.egg-info/
+# large raw results only; small JSON results are tracked
+results/**/*.npy
+results/**/*.npz
+results/**/*.bin
+results/**/*.hlo.txt
