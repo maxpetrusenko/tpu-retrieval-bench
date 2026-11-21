@@ -1,7 +1,9 @@
 # Results: TPU v5e-1
 
 read_when: quoting a TPU number from this repo, or deciding whether a Pallas kernel is worth writing for retrieval.
-Method: `docs/BENCHMARK_METHOD.md`. Spec and claims under test: `docs/SPEC.md`, `docs/presearch/papers.md`. Raw data: `results/tpu/**/*.json`. Every number below comes from those JSON files, from the profiler trace in `results/profile_jit_topk_m128_n1e6_d128/`, or is arithmetic on them (marked "derived").
+Method: `docs/BENCHMARK_METHOD.md`. Spec and claims under test: `docs/SPEC.md`, `docs/presearch/papers.md`. Raw data: `results/tpu/**/*.json` (Run 1 in `results/tpu/{synthetic,sift-128-euclidean}`, Run 2 in `results/tpu/run2*`). Every number below comes from those JSON files, from the profiler trace in `results/profile_jit_topk_m128_n1e6_d128/`, or is arithmetic on them (marked "derived").
+
+> Run 2 (2026-11-21) added the fused kernels V4 and V4b, block sweeps, the `approx_max_k` recall-target sweep, loop timing and device time: see section 8. Sections 1 to 7 describe Run 1 (2026-11-18); where they say "not measured", "V4 is not built" or "one recall target", section 8 has the measurement. The plots in section 3 are regenerated from Run 2.
 
 ## 1. Setup
 
@@ -156,14 +158,14 @@ none
 
 ## 3. Plots
 
-TPU only, generated with `python -m bench.plot --platform tpu`. Only the best-QPS record per (algorithm, batch size) is drawn.
+TPU only, generated with `python -m bench.plot --results results/tpu/run2 --platform tpu`. Only the best-QPS record per (algorithm, batch size) is drawn.
 
 ![SIFT-1M recall vs QPS](img/tpu_recall_qps_sift-128-euclidean_1000000_128_10_bf16.png)
 ![Synthetic N=1M throughput and p99 latency vs batch size](img/tpu_batch_qps_p99_synthetic_1000000_128_10_bf16.png)
 ![Synthetic N=1M percent of peak](img/tpu_percent_of_peak_synthetic_1000000_128_10_bf16.png)
 ![Synthetic N=65,536 throughput and p99 latency vs batch size](img/tpu_batch_qps_p99_synthetic_65536_128_10_bf16.png)
 
-The other four plots (`tpu_percent_of_peak_*` for SIFT and N=65,536, `tpu_recall_qps_*` for synthetic) are in `docs/img/`. The recall plots show points, not a curve: `approx_max_k` ran at one recall target.
+The other four plots (`tpu_percent_of_peak_*` for SIFT and N=65,536, `tpu_recall_qps_*` for synthetic) are in `docs/img/`. The synthetic recall plots draw the `approx_max_k` target sweep as points at recall 1.0 (section 8.3); SIFT has one target.
 
 ## 4. HLO and trace evidence
 
@@ -254,3 +256,144 @@ Mosaic accepted the kernel on the real chip (the Pallas runs completed with reca
 - Only `jit_topk` was profiled, at one shape. No compiled HLO dump (`--dump-hlo`) was taken; section 4b is lowered StableHLO from CPU.
 - CPU numbers (CI, Mac mini) and Pallas interpret-mode runs are not comparable to anything here and are not in this report.
 - Peak figures come from the JAX Pallas documentation, not from a measurement on this chip.
+
+## 8. Run 2: fused kernels, block sweeps, approx curve, loop and device timing
+
+Run 2 repeats the Run 1 grid on a new free Colab v5e-1 runtime and adds what Run 1 lacked: V4 `pallas_fused_topk`, V4b `pallas_fused_bucket`, block sweeps, an `approx_max_k` recall-target sweep, in-jit loop timing next to wall timing, and device time from the profiler. Raw data: `results/tpu/run2/` (105 records) and `results/tpu/run2-devtime/` (10 records, `--device-time`), trace in `results/run2_profile_jit_topk_m128_n1e6_d128/`. Run 1 records stay in `results/tpu/` untouched. Every number below comes from those JSON files or is arithmetic on them (marked "derived"). Tables come from `python -m bench.summarize --results results/tpu/run2`; the plots in section 3 now show Run 2.
+
+| item | value |
+|---|---|
+| Hardware | one TPU v5e chip (`TPU v5 lite`, 1 device), free Colab, same software as Run 1 (python 3.13.18, jax 0.12.0.1, libtpu 0.0.50) |
+| Date | 2026-11-21 UTC, records created 06:10:57 to 06:28:05, profile 06:28 |
+| Code | commit d603514 (V4 and V4b merged); records say `dirty: true` (see "Things that look wrong, Run 2") |
+| Grid | synthetic N in {65,536, 1,000,000} x M in {1, 16, 128, 1024}, plus SIFT-1M (1000 queries); D=128, k=10, bf16; `--timing both` (wall is the headline, loop recorded beside it) |
+| Sweeps | `--sweep-blocks` for the three Pallas variants at N=1M, M in {128, 1024}; `approx_max_k` at recall targets 0.80, 0.90, 0.95, 0.99 at N=1M, M=1024 |
+| Device time | `--device-time` at N=1M, M in {128, 1024}, for jit, the three Pallas variants and `approx_max_k` 0.95 |
+
+### 8.1 Throughput per shape (QPS, best config per shape)
+
+Speedups are over `jit_matmul_topk` in the same table (derived). `approx_max_k` is target 0.95.
+
+| shape (N, M) | jit_topk | pallas_score | pallas_fused_topk | pallas_fused_bucket | approx 0.95 | score x | fused x | bucket x |
+|---|---|---|---|---|---|---|---|---|
+| 65,536, 1 | 3,753 | 2,783 | 1,609 | 2,021 | 3,374 | 0.74 | 0.43 | 0.54 |
+| 65,536, 16 | 58,428 | 54,804 | 25,796 | 51,472 | 61,572 | 0.94 | 0.44 | 0.88 |
+| 65,536, 128 | 213,060 | 190,216 | 183,090 | 273,510 | 422,917 | 0.89 | 0.86 | 1.28 |
+| 65,536, 1024 | 291,300 | 272,982 | 345,718 | 537,835 | 2,942,782 | 0.94 | 1.19 | 1.85 |
+| 1,000,000, 1 | 1,218 | 618 | 147 | 473 | 1,446 | 0.51 | 0.12 | 0.39 |
+| 1,000,000, 16 | 14,291 | 9,582 | 2,349 | 7,615 | 25,601 | 0.67 | 0.16 | 0.53 |
+| 1,000,000, 128 | 20,699 | 21,339 | 20,561 | 34,699 | 203,175 | 1.03 | 0.99 | 1.68 |
+| 1,000,000, 1024 | 22,738 | 20,073 | 29,816 | 54,394 | 594,799 | 0.88 | 1.31 | 2.39 |
+| SIFT-1M, 1000 | 24,084 | 19,663 | 22,876 | 39,150 | 567,116 (recall 0.9802) | 0.82 | 0.95 | 1.63 |
+
+Recall: every exact variant (jit, blockwise, `pallas_score`, `pallas_fused_topk`) is 1.0 on all nine shapes. `pallas_fused_bucket` is 1.0 on every synthetic shape and 0.9997 on SIFT-1M, so it is approximate. `blockwise_topk` ran too (e.g. 19,038 QPS at N=1M, M=1024, 18,728 on SIFT-1M) and is in the JSON.
+
+Selection share. `sel/matmul` is 0.77 to 1.12 at M=1, 1.25 to 1.66 at M=16, 2.37 and 3.55 at M=128, 6.35 and 5.48 at M=1024, 8.24 on SIFT-1M. Selection is then 84.6% (N=1M, M=1024) and 89.2% (SIFT-1M) of matmul plus selection time (derived: r / (1 + r)). Fusing the per-tile selection into the kernel (V4) moved the exact path from 22,738 to 29,816 QPS at (N=1M, M=1024), which is the only shape where the fused exact kernel is clearly ahead (1.31x); the bucket variant, which replaces exact in-tile selection with a bucketed max, reaches 54,394 (2.39x).
+
+fast_p (fraction of shapes where the variant is correct and faster than `jit_matmul_topk` by more than p, best Pallas config per shape; `summarize` also lists `score_only` and `select_only`, which are stage timings, not search variants):
+
+| variant | shapes | fast_1.0 | fast_1.25 |
+|---|---|---|---|
+| blockwise_topk | 9 | 0.333 | 0.000 |
+| pallas_fused_topk | 9 | 0.222 | 0.111 |
+| pallas_score_topk | 9 | 0.111 | 0.000 |
+
+`pallas_fused_bucket` is excluded from fast_p because it is approximate, though it beats jit in 5 of 9 shapes (derived from the table above). No exact variant exceeded 10x over jit; the flags section of `summarize` printed `none`, and no record exceeded 100% of peak.
+
+### 8.2 Block-size sensitivity (N=1M)
+
+Best and worst config per variant, QPS and percent of peak for the whole call:
+
+| variant | M | configs | best (bm x bn x bk) | best QPS (% peak) | worst | worst QPS (% peak) | best/worst |
+|---|---|---|---|---|---|---|---|
+| pallas_score | 128 | 3 | 128x1024x128 | 21,339 (2.77) | 128x256x128 | 20,074 (2.61) | 1.063 |
+| pallas_score | 1024 | 9 | 512x256x128 | 20,073 (2.61) | 128x256x128 | 18,824 (2.45) | 1.066 |
+| pallas_fused_topk | 128 | 3 | 128x1024x128 | 20,561 (2.67) | 128x256x128 | 8,930 (1.16) | 2.302 |
+| pallas_fused_topk | 1024 | 9 | 256x1024x128 | 29,816 (3.87) | 512x256x128 | 6,121 (0.80) | 4.871 |
+| pallas_fused_bucket | 128 | 3 | 128x1024x128 | 34,699 (4.51) | 128x256x128 | 23,418 (3.04) | 1.482 |
+| pallas_fused_bucket | 1024 | 9 | 512x1024x128 | 54,394 (7.07) | 128x256x128 | 25,228 (3.28) | 2.156 |
+
+Only M=128 and M=1024 have more than one config (the sweep was limited to those); bk stayed 128 (the kernel clamps it for D=128), and the sweep grid was bm in {128, 256, 512} and bn in {256, 512, 1024} at M=1024 (bm is capped by M at 128).
+
+Testing the "about 6% of peak for 128-cube blocks against about 78% to 92% for 512x1024x1024" claim: **not reproduced, and only partly testable.** In the whole pipeline the best config of any variant reaches 7.07% of peak (bucket) and the exact variants 2.6% to 3.9%; nothing comes near 78%. For `pallas_score`, block size changes QPS by only 6.3% to 6.6% best/worst, because selection is about 85% of the call and block size touches only the matmul. For the two fused kernels, where selection runs inside the tiled kernel, block size matters a lot: 2.3x to 4.9x for `pallas_fused_topk`, 1.5x to 2.2x for the bucket variant. In every sweep bn=1024 was best or within 0.1% of best; for the two fused kernels the bn=256 configs were the slowest. The claim is about a standalone matmul; these records time the full pipeline, and the Pallas matmul alone was not timed, so the matmul-only 6% against 90% gap is not measured.
+
+### 8.3 `approx_max_k` recall target sweep (N=1M, M=1024, synthetic)
+
+| target | QPS | recall | % peak |
+|---|---|---|---|
+| 0.80 | 579,894 | 1.0 | 75.36 |
+| 0.90 | 597,946 | 1.0 | 77.70 |
+| 0.95 | 594,799 | 1.0 | 77.29 |
+| 0.99 | 564,554 | 1.0 | 73.36 |
+
+The curve is flat: QPS moves by 5.6% across targets (derived: 597,946 over 564,554 is 1.059) and measured recall is 1.0 at every target, above all of them. On this data and shape, relaxing the target buys nothing. Why is unmeasured: the sweep ran on synthetic Gaussian data only, and SIFT-1M was run at target 0.95 only (recall 0.9802, 567,116 QPS, 23.5x the 24,084 exact baseline, derived). So there is a recall-target axis now, but no trade-off curve on real data.
+
+### 8.4 Loop timing against wall timing
+
+`qps_loop` repeats the call inside one jit (`--loop-iters 16`) and so amortizes dispatch; `qps_wall` is the headline. Ratio loop/wall (derived), from the main grid records; the block-sweep records overwrote same-named main-grid records in wall-only mode, so loop numbers are missing for the Pallas variants at N=1M, M >= 128:
+
+| shape (N, M) | jit | pallas_score | pallas_fused_topk | pallas_fused_bucket | approx 0.95 |
+|---|---|---|---|---|---|
+| 65,536, 1 | 5.92 | 3.39 | 1.68 | 2.16 | 6.80 |
+| 65,536, 16 | 3.62 | 2.76 | 1.71 | 3.62 | 6.43 |
+| 65,536, 128 | 1.74 | 1.75 | 1.47 | 2.22 | 7.06 |
+| 65,536, 1024 | 1.08 | 1.08 | 1.12 | 1.17 | 2.79 |
+| 1,000,000, 1 | 1.47 | 1.18 | 1.06 | 1.18 | 1.71 |
+| 1,000,000, 16 | 1.32 | 1.22 | 1.06 | 1.17 | 1.73 |
+| 1,000,000, 128 | 1.06 | n/a | n/a | n/a | 1.65 |
+| 1,000,000, 1024 | 1.01 | n/a | n/a | n/a | n/a |
+| SIFT-1M, 1000 | 1.01 | 1.01 | 1.01 | 1.02 | 1.19 |
+
+Wall timing understates throughput by up to 5.9x for jit at the smallest shape (3,753 wall against 22,206 loop QPS) and by 6.4x to 7.1x for `approx_max_k` at N=65,536, M <= 128. At large shapes the two agree within 1% to 2% for the exact variants. This confirms the Run 1 statement that small-shape wall timings measure dispatch floor, and it also means the speedup ratios in 8.1 at M <= 16 are ratios of dispatch behavior as much as of kernels: the fused kernels' wall-time losses at small M are partly launch cost. The `approx_max_k` rows at N=1M, M=1024 have no loop record.
+
+### 8.5 Device time
+
+From the profiler (`device_time_source` = `xplane_xla_modules`, 5 module events over 5 calls), next to the wall p50 recorded in the same run:
+
+| shape (N, M) | variant | device ms | wall p50 ms | wall minus device ms |
+|---|---|---|---|---|
+| 1,000,000, 128 | jit_topk | 5.820 | 6.198 | 0.378 |
+| 1,000,000, 128 | pallas_score | 5.766 | 6.146 | 0.380 |
+| 1,000,000, 128 | pallas_fused_topk | 8.264 | 8.683 | 0.419 |
+| 1,000,000, 128 | pallas_fused_bucket | 3.952 | 4.329 | 0.377 |
+| 1,000,000, 128 | approx_max_k 0.95 | 0.365 | 0.645 | 0.280 |
+| 1,000,000, 1024 | jit_topk | 44.516 | 44.979 | 0.463 |
+| 1,000,000, 1024 | pallas_score | 50.458 | 51.010 | 0.552 |
+| 1,000,000, 1024 | pallas_fused_topk | 43.194 | 43.826 | 0.632 |
+| 1,000,000, 1024 | pallas_fused_bucket | 25.020 | 25.717 | 0.697 |
+| 1,000,000, 1024 | approx_max_k 0.95 | 1.442 | 1.778 | 0.336 |
+
+Wall time exceeds device time by 0.28 to 0.70 ms in every row (derived), a roughly fixed per-call overhead. The ranking by device time matches the ranking by wall time at both shapes, so the Pallas conclusions in 8.1 are not an artifact of dispatch at M >= 128. At M=128 the overhead is 5% to 9% of a call for the exact variants but 43% for `approx_max_k` (0.280 of 0.645 ms), so wall QPS understates `approx_max_k` the most.
+
+### 8.6 What we found (updated)
+
+**Did Pallas beat XLA?** Now yes, in part, and only with fusion. The unfused Pallas scoring kernel (V3) still does not: 0.51x to 1.03x of `jit_matmul_topk`, one win of 3% at (N=1M, M=128), within noise of run-to-run spread (Run 1 had it at 1.009x there). The fused exact kernel (V4) wins only at M=1024 (1.19x at N=65,536, 1.31x at N=1M) and is at 0.86x and 0.99x at M=128; at M <= 16 it is 0.12x to 0.44x. The fused bucket kernel (V4b, approximate, recall 1.0 on synthetic and 0.9997 on SIFT-1M) is faster than jit at every M >= 128 shape, 1.28x to 2.39x, and slower at M <= 16.
+
+**Is selection the bottleneck?** Yes, and fusing it is what moved the numbers. Selection is 85% to 89% of exact-path time at M=1024 and SIFT-1M (`sel/matmul` 5.48 and 8.24). Putting selection inside the matmul kernel is the only change that sped up an exact variant, and a bucketed approximation in the same kernel roughly doubled it. The 27x of Samaga et al. still did not reproduce at k=10.
+
+**Where is the ceiling?** `approx_max_k` at 594,799 QPS (77.3% of peak) is 10.9x faster than the best Pallas kernel here (54,394, derived) and 26.2x the exact baseline (derived). On TPU the stock approximate op beat our hand-written approximate kernel by an order of magnitude; the bucket kernel reaches 7.07% of peak at best.
+
+**Block size.** For the scoring-only kernel it is a 6% effect. For fused kernels it is a 1.5x to 4.9x effect, and the default config (256x512x128) is not the best one: bn=1024 was best or within 0.1% of best in all six sweeps. The default bn=512 leaves 1.27x on the table for V4 at M=1024 (derived: 29,816 over 23,436 at bm=256).
+
+**Timing.** Wall timing hides up to 5.9x (jit) to 7.1x (`approx_max_k`) of throughput at small shapes, and device time shows a 0.28 to 0.70 ms per-call overhead. Rankings at M >= 128 do not change between wall, loop and device time.
+
+**`approx_max_k` recall curve.** Flat on synthetic data: recall 1.0 at targets 0.80 to 0.99, QPS within 5.6%. Not a trade-off curve, and unmeasured on real data beyond target 0.95.
+
+### 8.7 Things that look wrong or need care (Run 2)
+
+- Every record has `git.dirty: true`. The Colab clone gains untracked `results/` output as the run proceeds, and nothing else was edited; we did not diff the clone against the commit, so "dirty" is probably the output directory, not changed code.
+- The sweep wrote to the same file names as main-grid records for the same bm/bn/bk, in wall-only mode, so those main-grid records (with loop timing) were overwritten for the Pallas variants at N=1M, M in {128, 1024}. Loop numbers for those cells are missing (marked n/a above).
+- `approx_max_k` recall is 1.0 at all four targets and QPS is flat, which looks like the recall target not changing the compiled work on this shape. We did not inspect the compiled program. Treat the 8.3 curve as "no effect measured", not as proof the target is ignored.
+- `approx_max_k` at (N=65,536, M=1): recall 0.9 (one miss in ten), same as Run 1.
+- `approx_max_k` at 77% of peak is plausible for the matmul alone (1.7 ms for 2.6e11 FLOP), but the roofline label says HBM-bound; read `percent_of_peak`, as in Run 1.
+- `pallas_fused_topk` at small M is far slower than jit (147 QPS against 1,218 at N=1M, M=1). Loop timing narrows the gap only a little (156 against 1,788), so it is not just dispatch; we did not trace why.
+- Run 2 jit and Pallas QPS at the large shapes are within 3% of Run 1 (e.g. jit at N=1M, M=1024: 22,738 against 22,803), which is the only run-to-run evidence we have; small-M numbers moved more (jit at N=65,536, M=1: 3,753 against 3,492).
+
+### 8.8 Limitations (Run 2)
+
+- Still one chip, one run per config, five repetitions, free-tier host. Run 1 against Run 2 is the only repeat, and only for configs both ran.
+- Block sweep only at N=1M and M in {128, 1024}, bk fixed at 128, bm and bn grids as above; no isolated Pallas matmul timing, so the matmul-only block-size claim is untested.
+- Recall sweep on synthetic data only; SIFT at target 0.95 only. No recall-versus-QPS curve on real data.
+- Loop timing missing for some cells (8.7), device time only at N=1M and M in {128, 1024}, and the device figure is a profiler module-event time over five calls.
+- Fused kernels ran with k' = k = 10 (`kprime` not swept), k=10 only, D=128 only, bf16 only; no GloVe, no GIST, no k=100.
+- Peak figures still come from the JAX Pallas documentation, not from a measurement on this chip.
