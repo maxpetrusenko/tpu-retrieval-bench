@@ -1,0 +1,120 @@
+{
+  "schema_version": "0.1",
+  "run_id": "2026-11-21T06:15:42Z-d603514",
+  "dataset": {
+    "name": "synthetic",
+    "source_url": null,
+    "n_train": 1000000,
+    "n_test": 1,
+    "dim": 128,
+    "distance": "ip",
+    "dtype_stored": "bf16",
+    "dtype_compute": "bf16",
+    "seed": 0,
+    "hash": "1d8f1c8e1f445c90"
+  },
+  "algorithm": {
+    "name": "score_only",
+    "params": {
+      "precision": "bf16"
+    },
+    "exact": true
+  },
+  "query": {
+    "k": 10,
+    "batch_size": 1,
+    "n_batches": 1,
+    "mode": "batch",
+    "n_queries_timed": 1,
+    "warmup_iters": 3,
+    "repetitions": 5
+  },
+  "hardware": {
+    "platform": "tpu",
+    "device_kind": "TPU v5 lite",
+    "n_devices": 1,
+    "host": "e55b9d181edf",
+    "jax_version": "0.12.0.1",
+    "jaxlib_version": "0.12.0.1",
+    "libtpu_version": "0.0.50",
+    "python": "3.13.18"
+  },
+  "metrics": {
+    "recall": null,
+    "recall_sampled_queries": null,
+    "recall_epsilon_0.01": null,
+    "recall_compute_dtype": "bf16",
+    "qps": 1829.324064221646,
+    "best_search_time_s": 0.0005466500001602981,
+    "search_time_s_all": [
+      0.0005733099999361002,
+      0.0005615100001250539,
+      0.0005466500001602981,
+      0.0005525399999442016,
+      0.0005517800000234274
+    ],
+    "latency_ms_per_batch": {
+      "min": 0.5466500001602981,
+      "p50": 0.5525399999442016,
+      "p95": 0.570949999973891,
+      "p99": 0.5728379999436584,
+      "mean": 0.5571580000378162
+    },
+    "latency_ms_per_query_amortized": 0.5466500001602981,
+    "compile_time_s": 0.13242470299996967,
+    "build_time_s": 0.0013789499998893007,
+    "index_size_bytes": 256000000,
+    "score_matrix_bytes": 4000000,
+    "bytes_moved": 260000512.0,
+    "arithmetic_intensity": 0.9846134456842915,
+    "roofline_label": "HBM-bound",
+    "selection_time_ms": 0.4221799999868381,
+    "matmul_time_ms": 0.5466500001602981,
+    "selection_over_matmul": 0.7723040334090172,
+    "best_search_time_s_wall": 0.0005466500001602981,
+    "best_search_time_s_loop": 0.0003584661875066786,
+    "qps_wall": 1829.324064221646,
+    "qps_loop": 2789.6633904456303,
+    "search_time_s_all_loop": [
+      0.0003624193125091324,
+      0.00036368624999738586,
+      0.0003584661875066786,
+      0.0003604268750052597,
+      0.0003647531249981739
+    ],
+    "latency_ms_per_batch_loop": {
+      "min": 0.3584661875066786,
+      "p50": 0.3624193125091324,
+      "p95": 0.3645397499980163,
+      "p99": 0.3647104499981424,
+      "mean": 0.3619503500033261
+    },
+    "serial_latency_ms": null,
+    "serial_n": null,
+    "serial_qps": null,
+    "device_time_ms": null,
+    "device_time_source": null,
+    "device_time_note": null,
+    "flops_achieved": 468306960440.7414,
+    "flops_peak": 197000000000000.0,
+    "percent_of_peak": 0.2377192692592596
+  },
+  "timing": {
+    "clock": "perf_counter",
+    "synchronized": "block_until_ready",
+    "includes_h2d_query_transfer": false,
+    "includes_d2h_result": false,
+    "xla_flags": "",
+    "mode": "both",
+    "headline": "wall",
+    "loop_iters": 16,
+    "loop_checksum": "sum_all_output_leaves",
+    "serial_n": null,
+    "device_time": false
+  },
+  "git": {
+    "commit": "d6035141b9e2baad0d893a4375508d2e6b91fa65",
+    "dirty": false
+  },
+  "created_at": "2026-11-21T06:15:42Z"
+}

@@ -23,10 +23,10 @@ What the tests and committed results show today. "CPU interpret" = pytest on CPU
 |---|---|---|---|
 | `jit_topk` | ip, l2, cos; mask; tested | ip (synthetic), l2 (SIFT-1M); no mask, no cos | untested |
 | `blockwise` | ip, l2, cos; mask; tested | ip (synthetic), l2 (SIFT-1M); no mask, no cos | untested |
-| `pallas_score` | ip, l2, cos; mask; tested; TPU lowering test from CPU | ip (synthetic), l2 (SIFT-1M); no mask, no cos; one block config, no sweep | untested |
-| `approx_max_k` | ip, no mask; recall tested at targets 0.9, 0.95, 0.99 | ip (synthetic), l2 (SIFT-1M); recall target 0.95 only | untested |
-| `pallas_fused_topk` (V4) | ip, l2, cos; mask; ties; non-aligned N/D; k <= 128; TPU lowering test from CPU | not measured | untested |
-| `pallas_fused_bucket` (V4b) | recall tested (approximate); TPU lowering test from CPU | not measured | untested |
+| `pallas_score` | ip, l2, cos; mask; tested; TPU lowering test from CPU | ip (synthetic), l2 (SIFT-1M); no mask, no cos; block sweep at N=1M, M in {128, 1024} | untested |
+| `approx_max_k` | ip, no mask; recall tested at targets 0.9, 0.95, 0.99 | ip (synthetic), l2 (SIFT-1M); recall targets 0.80 to 0.99 (synthetic), 0.95 (SIFT) | untested |
+| `pallas_fused_topk` (V4) | ip, l2, cos; mask; ties; non-aligned N/D; k <= 128; TPU lowering test from CPU | ip (synthetic), l2 (SIFT-1M); block sweep at N=1M | untested |
+| `pallas_fused_bucket` (V4b) | recall tested (approximate); TPU lowering test from CPU | ip (synthetic), l2 (SIFT-1M); block sweep at N=1M | untested |
 
 Mask support (`False` = excluded): `jit_topk`, `blockwise` and `pallas_score` are tested with a 30% mask on CPU; `bench/run.py` has no mask option, so no TPU record uses one. GPU: Pallas TPU kernels do not target GPU, and the XLA variants were never run there.
 
@@ -50,11 +50,14 @@ Results go to `results/<platform>/<dataset>/k<k>/<algo>/<params>.json`. CPU numb
 
 ## Results
 
-TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Full report: [docs/RESULTS.md](docs/RESULTS.md).
+TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Two runs: Run 1 (unfused kernels, 2026-11-18) and Run 2 (fused kernels, block sweeps, loop and device timing, 2026-11-21). Full report: [docs/RESULTS.md](docs/RESULTS.md).
 
-- Stock XLA (`jit_matmul_topk`) was the fastest exact variant in 7 of 9 shapes; the Pallas scoring kernel beat it by under 2% in two shapes and lost by up to 2x at M=1.
-- Selection dominates: `top_k` took 1.4x to 8.2x the matmul time at M >= 16 (the 27x claim did not reproduce at k=10). No exact variant passed 3.2% of peak.
-- `approx_max_k` at recall target 0.95: 558,188 QPS on SIFT-1M at recall 0.980, 23x the exact baseline (24,093 QPS), 72.5% of peak.
-- Not measured yet: Pallas block sweep, `approx_max_k` recall curve, fused top-k kernel.
+- Stock XLA (`jit_matmul_topk`) beat the unfused Pallas scoring kernel at 8 of 9 shapes (0.51x to 1.03x; one 3% win at N=1M, M=128).
+- Selection dominates: `top_k` took 1.25x to 8.2x the matmul time at M >= 16, 85% to 89% of exact-path time at M=1024 and SIFT-1M. The 27x claim did not reproduce at k=10. No exact variant passed 3.9% of peak.
+- Fusing selection into the kernel helped: exact `pallas_fused_topk` was 1.31x jit at N=1M, M=1024 (29,816 vs 22,738 QPS) and slower at M <= 16; the approximate `pallas_fused_bucket` was 1.28x to 2.39x jit at M >= 128 (54,394 QPS at N=1M, M=1024, recall 1.0; 0.9997 on SIFT-1M).
+- Block size: a 6% effect for the scoring kernel, 1.5x to 4.9x (best over worst) for the fused kernels; bn=1024 was best.
+- `approx_max_k` at recall target 0.95: 567,116 QPS on SIFT-1M at recall 0.980, 23.5x the exact baseline (24,084 QPS), 77% of peak on synthetic N=1M, M=1024. The recall-target sweep (0.80 to 0.99) was flat on synthetic data: recall 1.0, QPS within 5.6%.
+- Wall timing understates throughput by up to 5.9x (jit, N=65,536, M=1) against in-jit loop timing; device time sits 0.28 to 0.70 ms under wall time.
+- Not measured yet: matmul-only block sweep, recall curve on real data, GloVe and GIST.
 
 ![SIFT-1M recall vs QPS on TPU v5e-1](docs/img/tpu_recall_qps_sift-128-euclidean_1000000_128_10_bf16.png)
