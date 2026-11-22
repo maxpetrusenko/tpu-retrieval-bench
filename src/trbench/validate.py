@@ -9,8 +9,15 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
+from collections.abc import Iterator
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
+
+from trbench.records import MEDIAN_QPS_SCHEMA, schema_tuple
+
+Record = dict[str, Any]
 
 TOP_KEYS = ("schema_version", "run_id", "dataset", "algorithm", "query", "hardware", "metrics",
             "timing", "git", "created_at")
@@ -26,17 +33,18 @@ LATENCY_KEYS = ("min", "p50", "p95", "p99")
 NO_RECALL_ALGOS = ("score_only", "select_only")
 SPREAD_SCHEMA = (0, 2)  # schema_version at which the spread fields became required
 SPREAD_KEYS = ("n_repetitions", "latency_stdev_ms", "latency_p50_ci95_ms", "qps_median",
-               "qps_stdev", "qps_ci95")
+               "qps_stdev", "qps_ci95", "qps_best")
+MEDIAN_TOL = 1e-6  # relative: qps_median vs the median of per-pass QPS from search_time_s_all
 EXACT_RECALL_TOL = 1e-9
 MIN_REPS = 5
 REL_TOL = 0.05  # qps vs best time, latency min vs best time
 
 
-def _num(x) -> bool:
+def _num(x: object) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
-def _missing(obj, keys, where, errs):
+def _missing(obj: object, keys: tuple[str, ...], where: str, errs: list[str]) -> bool:
     if not isinstance(obj, dict):
         errs.append(f"{where}: expected object")
         return False
@@ -46,7 +54,7 @@ def _missing(obj, keys, where, errs):
     return True
 
 
-def _check_recall(rec, errs):
+def _check_recall(rec: Record, errs: list[str]) -> None:
     m, algo = rec["metrics"], rec["algorithm"]
     recall = m.get("recall")
     stage_only = str(algo.get("name")) in NO_RECALL_ALGOS
@@ -69,7 +77,7 @@ def _check_recall(rec, errs):
             errs.append(f"metrics.recall: exact variant has recall {recall} < 1.0")
 
 
-def _check_timing(rec, errs):
+def _check_timing(rec: Record, errs: list[str]) -> None:
     m = rec["metrics"]
     qps, best = m.get("qps"), m.get("best_search_time_s")
     if not _num(qps) or qps <= 0:
@@ -93,11 +101,14 @@ def _check_timing(rec, errs):
             errs.append("metrics.latency_ms_per_batch.min: disagrees with best_search_time_s")
     nq = rec["query"].get("n_queries_timed")
     ok = _num(qps) and qps > 0 and _num(best) and best > 0 and _num(nq) and nq > 0
+    ver = schema_tuple(rec)
+    if ver is not None and ver >= MEDIAN_QPS_SCHEMA:
+        return  # 0.2+: headline qps is the median pass; _check_spread ties it to the samples
     if ok and abs(qps - nq / best) > REL_TOL * (nq / best):
         errs.append(f"metrics.qps: {qps} disagrees with n_queries_timed/best_search_time_s")
 
 
-def _check_peak(rec, errs):
+def _check_peak(rec: Record, errs: list[str]) -> None:
     m = rec["metrics"]
     pct = m.get("percent_of_peak")
     if pct is not None and (not _num(pct) or not 0.0 <= pct <= 100.0):
@@ -109,27 +120,22 @@ def _check_peak(rec, errs):
         errs.append("metrics.percent_of_peak: set without flops_achieved and flops_peak")
 
 
-def schema_tuple(rec):
-    """schema_version "0.2" -> (0, 2); None when missing or unparsable."""
-    try:
-        return tuple(int(x) for x in str(rec.get("schema_version")).split("."))
-    except ValueError:
-        return None
-
-
-def is_dirty(rec) -> bool:
+def is_dirty(rec: object) -> bool:
     return bool(isinstance(rec, dict) and isinstance(rec.get("git"), dict)
                 and rec["git"].get("dirty"))
 
 
-def _interval(x, where, errs):
-    ok = (isinstance(x, list) and len(x) == 2 and all(_num(v) and v > 0 for v in x)
-          and x[0] <= x[1])
-    if not ok:
+def _interval_ok(x: object) -> bool:
+    return (isinstance(x, list) and len(x) == 2 and all(_num(v) and v > 0 for v in x)
+            and x[0] <= x[1])
+
+
+def _interval(x: object, where: str, errs: list[str]) -> None:
+    if not _interval_ok(x):
         errs.append(f"{where}: expected [lo, hi] positive numbers with lo <= hi, got {x!r}")
 
 
-def _check_spread(rec, errs):
+def _check_spread(rec: Record, errs: list[str]) -> None:
     """Schema >= 0.2 records must carry stdev and bootstrap CIs; 0.1 records are exempt."""
     ver = schema_tuple(rec)
     if ver is None or ver < SPREAD_SCHEMA:
@@ -153,9 +159,32 @@ def _check_spread(rec, errs):
     _interval(m["qps_ci95"], "metrics.qps_ci95", errs)
     if not _num(m["qps_median"]) or m["qps_median"] <= 0:
         errs.append("metrics.qps_median: must be > 0")
+        return
+    _check_headline_qps(rec, errs)
 
 
-def validate_record(rec) -> list[str]:
+def _check_headline_qps(rec: Record, errs: list[str]) -> None:
+    """0.2+: headline qps IS the median pass QPS and sits inside its own bootstrap CI;
+    qps_best is the fastest pass (n_queries_timed / best_search_time_s)."""
+    m, nq = rec["metrics"], rec["query"].get("n_queries_timed")
+    qps, med, ci = m.get("qps"), m["qps_median"], m["qps_ci95"]
+    if _num(qps) and abs(qps - med) > MEDIAN_TOL * med:
+        errs.append("metrics.qps: schema 0.2+ headline must equal qps_median (median pass)")
+    if _num(qps) and _interval_ok(ci) and not ci[0] <= qps <= ci[1]:
+        errs.append("metrics.qps: outside its own qps_ci95")
+    best_t, times = m.get("best_search_time_s"), m.get("search_time_s_all")
+    if not (_num(nq) and nq > 0 and _num(best_t) and best_t > 0):
+        return
+    qb = m["qps_best"]
+    if not _num(qb) or qb <= 0 or abs(qb - nq / best_t) > REL_TOL * (nq / best_t):
+        errs.append("metrics.qps_best: must equal n_queries_timed/best_search_time_s")
+    if isinstance(times, list) and times and all(_num(t) and t > 0 for t in times):
+        expect = statistics.median(nq / t for t in times)
+        if abs(med - expect) > MEDIAN_TOL * expect:
+            errs.append("metrics.qps_median: disagrees with the median of n_queries_timed/times")
+
+
+def validate_record(rec: Record) -> list[str]:
     """Return a list of problems; empty means the record is plausible."""
     errs: list[str] = []
     if not _missing(rec, TOP_KEYS, "record", errs):
@@ -176,13 +205,13 @@ def validate_record(rec) -> list[str]:
     return errs
 
 
-def iter_records(root):
+def iter_records(root: str | Path) -> Iterator[Path]:
     """Yield every *.json under root (file or directory), sorted."""
     root = Path(root)
     yield from ([root] if root.is_file() else sorted(root.rglob("*.json")))
 
 
-def validate_tree(root) -> dict[str, list[str]]:
+def validate_tree(root: str | Path) -> dict[str, list[str]]:
     """Map path -> problems for every JSON under root that has any (empty dict = all good)."""
     bad: dict[str, list[str]] = {}
     for path in iter_records(root):

@@ -15,3 +15,5 @@ results/**/*.hlo.txt
 results/profile_*/**/*.xplane.pb
 results/profile_*/**/*.trace.json.gz
 !results/profile_jit_topk_m128_n1e6_d128/**
+dist/
+.mypy_cache/
