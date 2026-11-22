@@ -54,10 +54,10 @@ TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Two runs: R
 
 - Stock XLA (`jit_matmul_topk`) beat the unfused Pallas scoring kernel at 8 of 9 shapes (0.51x to 1.03x; one 3% win at N=1M, M=128).
 - Selection dominates: `top_k` took 1.25x to 8.2x the matmul time at M >= 16, 85% to 89% of exact-path time at M=1024 and SIFT-1M. The 27x claim did not reproduce at k=10. No exact variant passed 3.9% of peak.
-- Fusing selection into the kernel helped: exact `pallas_fused_topk` was 1.31x jit at N=1M, M=1024 (29,816 vs 22,738 QPS) and slower at M <= 16; the approximate `pallas_fused_bucket` was 1.28x to 2.39x jit at M >= 128 (54,394 QPS at N=1M, M=1024, recall 1.0; 0.9997 on SIFT-1M).
+- Fusing selection into the kernel helped: exact `pallas_fused_topk` was 1.31x jit at N=1M, M=1024 with a tuned block config (tuned, bn=1024: 29,816 vs 22,738 QPS); at the default config (bn=512) it was 1.03x (23,436 QPS), and it was slower at M <= 16 (small-M ratios mostly reflect per-call dispatch cost). The approximate `pallas_fused_bucket` was 1.28x to 2.39x jit at M >= 128 (2.39x is tuned, 54,394 QPS at N=1M, M=1024, recall 1.0; 1.77x at the default config; 0.9997 recall on SIFT-1M). The default-config cells at N=1M, M in {128, 1024} need a rerun because the block sweep overwrote them.
 - Block size: a 6% effect for the scoring kernel, 1.5x to 4.9x (best over worst) for the fused kernels; bn=1024 was best.
-- `approx_max_k` at recall target 0.95: 567,116 QPS on SIFT-1M at recall 0.980, 23.5x the exact baseline (24,084 QPS), 77% of peak on synthetic N=1M, M=1024. The recall-target sweep (0.80 to 0.99) was flat on synthetic data: recall 1.0, QPS within 5.6%.
+- `approx_max_k` at recall target 0.95: 567,116 QPS on SIFT-1M at recall 0.980, 23.5x the exact baseline (24,084 QPS), 77% of peak on synthetic N=1M, M=1024. The recall-target sweep (0.80 to 0.99) showed no effect on synthetic data: recall 1.0 at every target, QPS within 5.6%. It is not a recall curve.
 - Wall timing understates throughput by up to 5.9x (jit, N=65,536, M=1) against in-jit loop timing; device time sits 0.28 to 0.70 ms under wall time.
-- Not measured yet: matmul-only block sweep, recall curve on real data, GloVe and GIST.
+- Not measured yet: matmul-only block sweep, recall-versus-QPS curve on real data, GloVe and GIST.
 
 ![SIFT-1M recall vs QPS on TPU v5e-1](docs/img/tpu_recall_qps_sift-128-euclidean_1000000_128_10_bf16.png)
