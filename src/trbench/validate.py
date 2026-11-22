@@ -24,7 +24,11 @@ METRIC_KEYS = ("recall", "qps", "best_search_time_s", "search_time_s_all",
 LATENCY_KEYS = ("min", "p50", "p95", "p99")
 # variants that time a stage only and carry no result ids to score
 NO_RECALL_ALGOS = ("score_only", "select_only")
+SPREAD_SCHEMA = (0, 2)  # schema_version at which the spread fields became required
+SPREAD_KEYS = ("n_repetitions", "latency_stdev_ms", "latency_p50_ci95_ms", "qps_median",
+               "qps_stdev", "qps_ci95")
 EXACT_RECALL_TOL = 1e-9
+MIN_REPS = 5
 REL_TOL = 0.05  # qps vs best time, latency min vs best time
 
 
@@ -105,6 +109,52 @@ def _check_peak(rec, errs):
         errs.append("metrics.percent_of_peak: set without flops_achieved and flops_peak")
 
 
+def schema_tuple(rec):
+    """schema_version "0.2" -> (0, 2); None when missing or unparsable."""
+    try:
+        return tuple(int(x) for x in str(rec.get("schema_version")).split("."))
+    except ValueError:
+        return None
+
+
+def is_dirty(rec) -> bool:
+    return bool(isinstance(rec, dict) and isinstance(rec.get("git"), dict)
+                and rec["git"].get("dirty"))
+
+
+def _interval(x, where, errs):
+    ok = (isinstance(x, list) and len(x) == 2 and all(_num(v) and v > 0 for v in x)
+          and x[0] <= x[1])
+    if not ok:
+        errs.append(f"{where}: expected [lo, hi] positive numbers with lo <= hi, got {x!r}")
+
+
+def _check_spread(rec, errs):
+    """Schema >= 0.2 records must carry stdev and bootstrap CIs; 0.1 records are exempt."""
+    ver = schema_tuple(rec)
+    if ver is None or ver < SPREAD_SCHEMA:
+        return
+    m = rec["metrics"]
+    for k in SPREAD_KEYS:
+        if k not in m:
+            errs.append(f"metrics: missing key {k!r} (required from schema_version 0.2)")
+    if any(k not in m for k in SPREAD_KEYS):
+        return
+    n = m["n_repetitions"]
+    if not isinstance(n, int) or n < MIN_REPS:
+        errs.append(f"metrics.n_repetitions: {n!r} must be an int >= {MIN_REPS}")
+    times = m.get("search_time_s_all")
+    if isinstance(times, list) and n != len(times):
+        errs.append("metrics.n_repetitions: differs from len(search_time_s_all)")
+    for k in ("latency_stdev_ms", "qps_stdev"):
+        if not _num(m[k]) or m[k] < 0:
+            errs.append(f"metrics.{k}: {m[k]!r} must be a number >= 0")
+    _interval(m["latency_p50_ci95_ms"], "metrics.latency_p50_ci95_ms", errs)
+    _interval(m["qps_ci95"], "metrics.qps_ci95", errs)
+    if not _num(m["qps_median"]) or m["qps_median"] <= 0:
+        errs.append("metrics.qps_median: must be > 0")
+
+
 def validate_record(rec) -> list[str]:
     """Return a list of problems; empty means the record is plausible."""
     errs: list[str] = []
@@ -122,6 +172,7 @@ def validate_record(rec) -> list[str]:
     _check_recall(rec, errs)
     _check_timing(rec, errs)
     _check_peak(rec, errs)
+    _check_spread(rec, errs)
     return errs
 
 

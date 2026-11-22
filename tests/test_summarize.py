@@ -42,3 +42,37 @@ def test_fast_p_and_reward_hack_flag(tmp_path):
     assert "| pallas_score_topk | 1 | 0.000 | 0.000 |" in out
     assert "approx_max_k |" not in out.split("## fast_p")[1].split("## Flags")[0]
     assert "exact variant speedup 20.0x" in out
+
+
+def _ci(rec, lo, hi):
+    rec["metrics"]["qps_ci95"] = [lo, hi]
+    return rec
+
+
+def test_within_noise_flag_and_fast_p_exclusion(tmp_path):
+    recs = [_ci(_rec("jit_matmul_topk", 100.0), 95.0, 105.0),
+            _ci(_rec("pallas_fused_topk", 130.0), 100.0, 140.0),  # overlaps baseline CI
+            _ci(_rec("blockwise_topk", 150.0), 140.0, 160.0)]  # disjoint: significant
+    _write(tmp_path, recs)
+    out = summarize.render(summarize.load(tmp_path))
+    assert "vs jit_topk" in out
+    fused = next(ln for ln in out.splitlines() if ln.startswith("| pallas_fused_topk"))
+    block = next(ln for ln in out.splitlines() if ln.startswith("| blockwise_topk"))
+    assert fused.endswith("| 1.30x (within noise) |")
+    assert block.endswith("| 1.50x |")
+    assert "| pallas_fused_topk | 1 | 0.000 | 0.000 |" in out  # noise-level win is not fast
+    assert "| blockwise_topk | 1 | 1.000 | 1.000 |" in out
+
+
+def test_no_ci_flag_for_old_records(tmp_path):
+    _write(tmp_path, [_rec("jit_matmul_topk", 100.0), _rec("pallas_fused_topk", 130.0)])
+    out = summarize.render(summarize.load(tmp_path))
+    assert "1.30x (no CI)" in out
+    assert "| pallas_fused_topk | 1 | 1.000 | 1.000 |" in out  # old records keep old fast_p
+
+
+def test_ci_overlap_edges():
+    a, b = _ci(_rec("x", 1.0), 1.0, 2.0), _ci(_rec("y", 1.0), 2.0, 3.0)
+    assert summarize.ci_overlap(a, b) is True  # touching counts as overlap
+    assert summarize.ci_overlap(a, _ci(_rec("z", 1.0), 2.1, 3.0)) is False
+    assert summarize.ci_overlap(a, _rec("w", 1.0)) is None

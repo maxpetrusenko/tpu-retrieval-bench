@@ -6,9 +6,10 @@ Exit 0 when all records are plausible, 1 otherwise. See trbench.validate for the
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
-from trbench.validate import iter_records, validate_tree
+from trbench.validate import is_dirty, iter_records, validate_tree
 
 
 def main(argv=None) -> int:
@@ -16,15 +17,29 @@ def main(argv=None) -> int:
     ap.add_argument("paths", nargs="*", default=["results"], help="files or directories")
     ap.add_argument("--allow-empty", action="store_true",
                     help="do not fail when no JSON records are found")
+    ap.add_argument("--strict", action="store_true",
+                    help="also fail records with git.dirty=true (default: warn with a count)")
     args = ap.parse_args(argv)
-    total, failures = 0, {}
+    total, dirty, failures = 0, [], {}
     for p in args.paths:
-        total += sum(1 for _ in iter_records(p))
+        for path in iter_records(p):
+            total += 1
+            try:
+                if is_dirty(json.loads(path.read_text())):
+                    dirty.append(str(path))
+            except (OSError, json.JSONDecodeError):
+                pass  # reported by validate_tree
         failures.update(validate_tree(p))
+    if args.strict:
+        for path in dirty:
+            failures.setdefault(path, []).append("git.dirty is true (--strict)")
     for path, errs in failures.items():
         print(f"FAIL {path}")
         for e in errs:
             print(f"  - {e}")
+    if dirty and not args.strict:
+        print(f"warning: {len(dirty)} of {total} records have git.dirty=true "
+              "(use --strict to fail on them)")
     print(f"checked {total} records, {len(failures)} failed")
     if total == 0 and not args.allow_empty:
         print("no records found", file=sys.stderr)

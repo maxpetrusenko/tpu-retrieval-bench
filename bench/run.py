@@ -31,6 +31,13 @@ def ints(s):
     return [int(x) for x in s.split(",")]
 
 
+def reps_arg(s):
+    n = int(s)
+    if n < timing.MIN_REPS:
+        raise argparse.ArgumentTypeError(f"--reps must be >= {timing.MIN_REPS}, got {n}")
+    return n
+
+
 def parse(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--algos", default="jit_topk", help="comma list: numpy_ref,jit_topk,blockwise,pallas_score,"
@@ -51,7 +58,11 @@ def parse(argv=None):
     p.add_argument("--metric", default="ip", choices=list(reference.METRICS))
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--warmup", type=int, default=3)
-    p.add_argument("--reps", type=int, default=5)
+    p.add_argument("--reps", type=reps_arg, default=timing.DEFAULT_REPS,
+                   help=f"timed repetitions per record (default {timing.DEFAULT_REPS}, minimum "
+                   f"{timing.MIN_REPS}); spread and CIs in the record come from these")
+    p.add_argument("--allow-dirty", action="store_true",
+                   help="run on a dirty git tree (recorded as git.dirty=true); refused otherwise")
     p.add_argument("--out", default="results")
     p.add_argument("--block-size", type=int, default=65536, help="blockwise db block")
     p.add_argument("--bm", type=int, default=256)
@@ -277,6 +288,7 @@ def run_one(algo, m, n, d, k, a, hw, git, bp=None, ann=None):
     best = min(res["times_s"])
     mode = "wall" if algo == "numpy_ref" else a.timing
     tm = timing_metrics(res, m)
+    tm.update(timing.spread_metrics(res["times_s"], m, res["latency_ms"]))
     rf_algo = "pallas_fused" if algo in FUSED else algo
     in_roofline = rf_algo in roofline.VARIANTS
     dkind = hw["device_kind"]
@@ -438,9 +450,24 @@ def link_stages(stage, exact, a, dkind):
                 records.write_record(path, rec)
 
 
+def repo_git_info(a):
+    """git_info for this repo; --out inside the repo does not count as dirty."""
+    repo = Path(__file__).resolve().parents[1]
+    ignore = ["results"]
+    out = Path(a.out).resolve()
+    if out.is_relative_to(repo) and out != repo:
+        ignore.append(str(out.relative_to(repo)))
+    return env.git_info(repo, ignore=ignore)
+
+
 def main(argv=None):
     a = parse(argv)
-    hw, git = env.hardware_info(), env.git_info(Path(__file__).resolve().parents[1])
+    git = repo_git_info(a)
+    if git["dirty"] and not a.allow_dirty:
+        raise SystemExit("refusing to run: git tree is dirty (uncommitted changes outside the "
+                         "output dir), so records would not match the commit. Commit or stash, "
+                         "or pass --allow-dirty (records git.dirty=true).")
+    hw = env.hardware_info()
     ann = load_dataset(a) if a.dataset != "synthetic" else None
     shapes = [(len(ann["test"]), len(ann["train"]), ann["train"].shape[1])] if ann else None
     stage, exact = {}, {}

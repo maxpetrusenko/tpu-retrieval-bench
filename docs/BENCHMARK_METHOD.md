@@ -21,11 +21,14 @@ Sources: `docs/presearch/benchmarks.md` (section numbers below), `docs/presearch
 ## 2. Timing rules
 
 1. Compile is measured separately (AOT `jit(f).lower(...).compile()`), never in the timed loop.
-2. Warmup >= 3 calls, then >= 5 timed repetitions; every call ends with `block_until_ready` before the clock stops.
+2. Warmup >= 3 calls, then timed repetitions (`--reps`, default 20, minimum 5 enforced); every call ends with `block_until_ready` before the clock stops.
 3. Database and queries are resident on device. Host-to-device query transfer and device-to-host result copy are excluded; each record states this in its `timing` block.
-4. Headline QPS = M / min(time). Latency fields come from per-batch repetitions (p50/p95/p99), so with 5 repetitions p99 is effectively the max. Say so when quoting it.
+4. Headline QPS = M / min(time). Latency fields come from per-batch repetitions (p50/p95/p99), so with few repetitions p99 is effectively the max (with 20 it is still close to it). Say so when quoting it.
 5. Device time next to wall time: `--device-time` traces `--reps` warm calls with `jax.profiler` and sums the `XLA Modules` events of the first `/device:` plane (parsed offline with `jax.profiler.ProfileData`, no TensorBoard). First batch only. Off TPU/GPU the trace has no device plane: `device_time_ms` is null and `device_time_note` says why. Wall time includes dispatch.
-6. One chip, one process. Record chip kind, jax/jaxlib/libtpu versions, XLA flags, seed, dataset hash, git commit and dirty flag (R10).
+6. Spread (schema 0.2+): each record carries `n_repetitions`, `latency_stdev_ms`, `latency_p50_ci95_ms`, `qps_median`, `qps_stdev` and `qps_ci95`. CIs are percentile bootstrap intervals (2000 resamples, seed 0, numpy only, so reruns of the same data give the same CI) of the median batch latency and of the median per-pass QPS. The headline `qps` stays M / min(time); the CI is for the median pass, so it can sit below the headline. `bench.summarize` marks a speedup over `jit_topk` "within noise" when the two QPS CIs overlap and "no CI" for records written before schema 0.2; within-noise wins do not count toward fast_p. Records with `schema_version` below 0.2 stay valid without these fields.
+7. Dirty tree: `bench/run.py` refuses to run when `git status` shows changes outside the output directory unless `--allow-dirty` is passed; `git.dirty` is recorded either way. `python -m bench.validate_results` prints a count of dirty records and `--strict` fails on them.
+8. Doc counts: record and dirty counts quoted in `docs/RESULTS.md` live in a generated block (`python -m bench.doc_stats --write docs/RESULTS.md`); `tests/test_doc_stats.py` fails when it drifts from the JSON.
+9. One chip, one process. Record chip kind, jax/jaxlib/libtpu versions, XLA flags, seed, dataset hash, git commit and dirty flag (R10).
 
 ### 2.1 Timing lanes (`bench/run.py`)
 

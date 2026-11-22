@@ -206,3 +206,58 @@ def test_exact_variants_f32_dataset_recall_is_one(tmp_path):
                 assert mt["recall"] == 1.0, name
             assert mt["recall_epsilon_0.01"] >= mt["recall"], name
             assert mt["recall_epsilon_0.01"] >= 0.99, name
+
+
+ARGS = ["--algos", "jit_topk", "--m", "4", "--n", "600", "--d", "16", "--k", "5"]
+
+
+def test_default_reps_20_spread_fields_and_schema(tmp_path):
+    from trbench import records
+    from trbench.validate import validate_record
+    run.main([*ARGS, "--out", str(tmp_path)])
+    rec = read_all(tmp_path)["jit_topk"]
+    m = rec["metrics"]
+    assert rec["schema_version"] == records.SCHEMA_VERSION == "0.2"
+    assert rec["query"]["repetitions"] == 20 and len(m["search_time_s_all"]) == 20
+    assert m["n_repetitions"] == 20 and m["latency_stdev_ms"] >= 0
+    lo, hi = m["qps_ci95"]
+    assert 0 < lo <= m["qps_median"] <= hi
+    assert m["latency_p50_ci95_ms"][0] <= m["latency_p50_ci95_ms"][1]
+    assert {"min", "p50", "p95", "p99", "mean"} <= m["latency_ms_per_batch"].keys()
+    assert validate_record(rec) == []
+
+
+def test_reps_flag_and_minimum(tmp_path, capsys):
+    run.main([*ARGS, "--reps", "6", "--out", str(tmp_path)])
+    assert read_all(tmp_path)["jit_topk"]["metrics"]["n_repetitions"] == 6
+    with pytest.raises(SystemExit):
+        run.parse([*ARGS, "--reps", "4"])
+    assert "--reps must be >= 5" in capsys.readouterr().err
+
+
+def test_dirty_tree_refused_unless_allowed(tmp_path, monkeypatch):
+    monkeypatch.setattr(run, "repo_git_info", lambda a: {"commit": "a" * 40, "dirty": True})
+    with pytest.raises(SystemExit, match="dirty"):
+        run.main([*ARGS, "--out", str(tmp_path)])
+    assert not list(tmp_path.rglob("*.json"))
+    run.main([*ARGS, "--allow-dirty", "--out", str(tmp_path)])
+    assert read_all(tmp_path)["jit_topk"]["git"]["dirty"] is True
+
+
+def test_git_info_ignores_results_dir(tmp_path):
+    import subprocess
+
+    from trbench.env import git_info
+
+    def git(*a):
+        subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-qm", "init")
+    assert git_info(tmp_path)["dirty"] is False
+    (tmp_path / "results").mkdir()
+    (tmp_path / "results" / "a.json").write_text("{}")
+    assert git_info(tmp_path)["dirty"] is False  # output dir does not count
+    (tmp_path / "src.py").write_text("x = 1\n")
+    assert git_info(tmp_path)["dirty"] is True
+    assert git_info(tmp_path, ignore=("results", "src.py"))["dirty"] is False

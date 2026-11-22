@@ -46,7 +46,7 @@ Results go to `results/<platform>/<dataset>/k<k>/<algo>/<params>.json`. CPU numb
 
 ## Colab TPU
 
-[Open the notebook in Colab](https://colab.research.google.com/github/maxpetrusenko/tpu-retrieval-bench/blob/main/notebooks/colab_tpu.ipynb) and pick a TPU v5e-1 runtime.
+[Open the notebook in Colab](https://colab.research.google.com/github/maxpetrusenko/tpu-retrieval-bench/blob/main/notebooks/colab_tpu.ipynb) and pick a TPU v5e-1 runtime. The notebook runs `bash scripts/reproduce_all.sh <fresh dir>`, the same single command for a local TPU host: full grid, block and recall sweeps, device time, then `validate_results --strict` and `summarize`. Records carry stdev and bootstrap 95% CIs from 20 repetitions; `bench/run.py` refuses a dirty git tree unless `--allow-dirty`.
 
 ## Results
 

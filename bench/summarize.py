@@ -8,6 +8,9 @@ that look wrong (recall below 1 for exact variants, peak above 100 percent, erro
 A KernelBench-style fast_p table gives, per exact variant, the fraction of shapes where it is
 correct (recall 1 at eps 0.01) AND its QPS beats jit_matmul_topk by more than p (p in 1.0, 1.25).
 An exact variant with speedup above 10x is flagged for manual review (anti reward-hack check).
+Speedups over jit_topk carry a noise flag: "within noise" when the bootstrap 95% CIs of the two
+QPS values (metrics.qps_ci95, schema 0.2+) overlap, "no CI" when either record predates them.
+A within-noise speedup does not count toward fast_p.
 Filters: --platform --dataset. Output: stdout or --out FILE.
 """
 
@@ -38,7 +41,29 @@ def shape_key(r):
             q["batch_size"])
 
 
-def row(r):
+def ci_overlap(a, b):
+    """True/False when both records carry qps_ci95 (overlap test); None when either lacks it."""
+    ca, cb = a["metrics"].get("qps_ci95"), b["metrics"].get("qps_ci95")
+    if not ca or not cb:
+        return None
+    return ca[0] <= cb[1] and cb[0] <= ca[1]
+
+
+def noise_flag(r, base):
+    ov = ci_overlap(r, base)
+    return "no CI" if ov is None else ("within noise" if ov else "")
+
+
+def vs_baseline(r, base):
+    """Cell for the 'vs jit_topk' column: speedup plus noise flag; '-' for the baseline."""
+    if base is None or r is base or r["algorithm"]["name"] == BASELINE:
+        return "-"
+    x = r["metrics"]["qps"] / base["metrics"]["qps"]
+    flag = noise_flag(r, base)
+    return f"{x:.2f}x" + (f" ({flag})" if flag else "")
+
+
+def row(r, base=None):
     m, a = r["metrics"], r["algorithm"]
     lat = m["latency_ms_per_batch"]
     p = a["params"]
@@ -50,11 +75,11 @@ def row(r):
     return [algo, fmt(m["compile_time_s"], 3), fmt(lat["p50"], 3), fmt(lat["p95"], 3),
             fmt(m["qps"], 0), fmt(m.get("recall"), 4), fmt(m.get("recall_epsilon_0.01"), 4),
             fmt(m.get("percent_of_peak")), m.get("roofline_label") or "-",
-            fmt(m.get("selection_over_matmul"))]
+            fmt(m.get("selection_over_matmul")), vs_baseline(r, base)]
 
 
 HEAD = ["algo", "compile_s", "p50 ms", "p95 ms", "QPS", "recall", "recall eps0.01",
-        "% peak", "roofline", "sel/matmul"]
+        "% peak", "roofline", "sel/matmul", "vs jit_topk"]
 
 
 def md_table(head, rows):
@@ -85,7 +110,9 @@ def main_tables(recs):
         by[shape_key(r)].append(r)
     parts = []
     for k in sorted(by, key=lambda x: (x[0], x[1], x[2], x[5])):
-        rows = [row(r) for r in best_per_algo(by[k])]
+        best = best_per_algo(by[k])
+        base = next((r for r in best if r["algorithm"]["name"] == BASELINE), None)
+        rows = [row(r, base) for r in best]
         parts.append(f"### {shape_title(k)}\n\n{md_table(HEAD, rows)}\n")
     return "\n".join(parts)
 
@@ -121,7 +148,8 @@ def is_correct(r):
 
 
 def speedups(recs):
-    """[(algo name, shape key, correct, speedup over jit_topk)] using best QPS per algo+shape."""
+    """[(algo name, shape key, correct, speedup, noise flag)] over jit_topk, best QPS per
+    algo+shape. Flag: "within noise" (CIs overlap), "no CI" (a record lacks CIs) or ""."""
     by = defaultdict(dict)
     for r in recs:
         name, key = r["algorithm"]["name"], shape_key(r)
@@ -136,7 +164,8 @@ def speedups(recs):
         for name, r in algos.items():
             if name in (BASELINE, "numpy_ref") or not r["algorithm"].get("exact"):
                 continue
-            out.append((name, key, is_correct(r), r["metrics"]["qps"] / base["metrics"]["qps"]))
+            out.append((name, key, is_correct(r), r["metrics"]["qps"] / base["metrics"]["qps"],
+                        noise_flag(r, base)))
     return out
 
 
@@ -146,7 +175,7 @@ def fast_p_table(recs):
     names = sorted({n for n, *_ in sp})
     rows = []
     for name in names:
-        mine = [(ok, x) for n, _, ok, x in sp if n == name]
+        mine = [(ok and flag != "within noise", x) for n, _, ok, x, flag in sp if n == name]
         cells = [fmt(sum(1 for ok, x in mine if ok and x > p) / len(mine), 3) for p in FAST_P]
         rows.append([name, str(len(mine)), *cells])
     head = ["algo", "shapes", *[f"fast_{p}" for p in FAST_P]]
@@ -155,7 +184,7 @@ def fast_p_table(recs):
 
 def suspect_speedups(recs):
     return [f"exact variant speedup {x:.1f}x > {SUSPECT_SPEEDUP:g}x over jit_topk, review by hand: "
-            f"{n} {shape_title(k)}" for n, k, _, x in speedups(recs) if x > SUSPECT_SPEEDUP]
+            f"{n} {shape_title(k)}" for n, k, _, x, _ in speedups(recs) if x > SUSPECT_SPEEDUP]
 
 
 def anomalies(recs):
