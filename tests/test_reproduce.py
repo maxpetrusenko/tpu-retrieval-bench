@@ -62,3 +62,41 @@ def test_notebook_uses_single_entry_point_and_keeps_tpu_lock():
     for c in code:  # TPU lock: jax is only imported inside `!python`, never in the kernel
         kernel = [ln for ln in c.splitlines() if not ln.lstrip().startswith(("!", "#"))]
         assert not any(ln.lstrip().startswith(("import jax", "from jax")) for ln in kernel)
+
+
+def _first_cmd(env):
+    """First command line a dry run prints, with PATH limited to the given directory."""
+    r = subprocess.run([bash, str(SCRIPT), "/nonexistent/out"], capture_output=True, text=True,
+                       cwd=ROOT, check=False, env={"DRY_RUN": "1", **env})
+    assert r.returncode == 0, r.stderr
+    return next(ln for ln in r.stdout.splitlines() if ln.startswith("+ "))
+
+
+def _path_with(tmp_path, *tools):
+    """A PATH holding only the shell utilities the script needs plus stub `tools`."""
+    d = tmp_path / "bin"
+    d.mkdir()
+    for util in ("dirname", "date", "ls"):
+        (d / util).symlink_to(shutil.which(util))
+    for tool in tools:
+        stub = d / tool
+        stub.write_text("#!/bin/sh\nexit 0\n")
+        stub.chmod(0o755)
+    return str(d)
+
+
+def test_interpreter_prefers_PYTHON_env(tmp_path):
+    path = _path_with(tmp_path, "uv", "python3")
+    assert _first_cmd({"PATH": path, "PYTHON": "mypy-python"}).startswith("+ mypy-python -m bench.run")
+
+
+def test_interpreter_uses_uv_run_when_available(tmp_path):
+    assert _first_cmd({"PATH": _path_with(tmp_path, "uv", "python3")}).startswith(
+        "+ uv run python -m bench.run")
+
+
+def test_interpreter_falls_back_to_python3_then_python(tmp_path):
+    assert _first_cmd({"PATH": _path_with(tmp_path, "python3")}).startswith("+ python3 -m bench.run")
+    other = tmp_path / "other"
+    other.mkdir()
+    assert _first_cmd({"PATH": _path_with(other)}).startswith("+ python -m bench.run")
