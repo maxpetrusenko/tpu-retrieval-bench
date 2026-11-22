@@ -184,6 +184,8 @@ def params_str(algo, m, n, d, a, bp):
         params += f"_B{a.block_size}"
     elif algo in PALLAS_ALGOS:
         params += f"_bm{bp[0]}_bn{bp[1]}_bk{bp[2]}"
+        if a.sweep_blocks:
+            params += "_sweep"  # keep sweep records apart from default-config records
     elif algo == "approx_max_k":
         params += f"_r{a.recall_target}"
     return params
