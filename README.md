@@ -36,6 +36,7 @@ Mask support (`False` = excluded): `jit_topk`, `blockwise` and `pallas_score` ar
 uv sync --extra hdf5 --extra plot
 JAX_PLATFORMS=cpu uv run pytest -q
 uv run ruff check .
+uv run mypy
 uv run python bench/run.py --algos jit_topk,blockwise,pallas_score,score_only,select_only --m 16 --n 65536 --d 128 --k 10
 uv run python bench/download.py sift
 uv run python bench/run.py --dataset sift-128-euclidean --n-train 100000 --n-test 1000 --algos jit_topk,blockwise
@@ -61,3 +62,11 @@ TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Two runs: R
 - Not measured yet: matmul-only block sweep, recall-versus-QPS curve on real data, GloVe and GIST.
 
 ![SIFT-1M recall vs QPS on TPU v5e-1](docs/img/tpu_recall_qps_sift-128-euclidean_1000000_128_10_bf16.png)
+
+## Cite
+
+If you use this benchmark or its numbers, cite it through [CITATION.cff](CITATION.cff); GitHub's "Cite this repository" button reads the same file. Quote numbers from a committed result JSON and name the chip, jax version and commit.
+
+## Quality
+
+The scorecard that tracks code, CI, reproducibility and security targets, with the checks behind each score, is [docs/QUALITY.md](docs/QUALITY.md).

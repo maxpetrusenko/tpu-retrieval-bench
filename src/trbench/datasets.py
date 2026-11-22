@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 METRIC_MAP = {"euclidean": "l2", "angular": "cos"}
 DATASETS = {
@@ -15,23 +17,26 @@ DATASETS = {
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
-def resolve(name_or_path) -> Path:
+def resolve(name_or_path: str | Path) -> Path:
     p = Path(name_or_path)
     if p.suffix == ".hdf5" or p.exists():
         return p
     return DATA_DIR / f"{name_or_path}.hdf5"
 
 
-def bruteforce_gt(train, test, metric, k=100, chunk=None):
+def bruteforce_gt(train_in: npt.ArrayLike, test_in: npt.ArrayLike, metric: str, k: int = 100,
+                  chunk: int | None = None) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.float32]]:
     """Exact (neighbors, distances) in ann-benchmarks convention; used for n_train subsets.
 
     float32 throughout; queries are chunked so a chunk x N distance block stays near 256 MB.
     """
-    train = np.asarray(train, dtype=np.float32)
-    test = np.asarray(test, dtype=np.float32)
+    train: npt.NDArray[np.float32] = np.asarray(train_in, dtype=np.float32)
+    test: npt.NDArray[np.float32] = np.asarray(test_in, dtype=np.float32)
     if metric == "cos":
-        train = train / np.maximum(np.linalg.norm(train, axis=1, keepdims=True), 1e-30)
-        test = test / np.maximum(np.linalg.norm(test, axis=1, keepdims=True), 1e-30)
+        train = (train / np.maximum(np.linalg.norm(train, axis=1, keepdims=True), 1e-30)
+                 ).astype(np.float32)
+        test = (test / np.maximum(np.linalg.norm(test, axis=1, keepdims=True), 1e-30)
+                ).astype(np.float32)
     k = min(k, len(train))
     chunk = chunk or max(1, int(64e6 // max(len(train), 1)))
     e2 = np.sum(train * train, axis=1)
@@ -53,13 +58,14 @@ def bruteforce_gt(train, test, metric, k=100, chunk=None):
     return ids, dists
 
 
-def load_ann(name_or_path, n_train=None, n_test=None) -> dict:
+def load_ann(name_or_path: str | Path, n_train: int | None = None,
+             n_test: int | None = None) -> dict[str, Any]:
     """Load an ann-benchmarks HDF5 -> dict(train, test, neighbors, distances, metric).
 
     metric: euclidean -> "l2", angular -> "cos". If n_train truncates the corpus the stored
     ground truth is invalid, so it is recomputed by brute force on the subset.
     """
-    import h5py
+    import h5py  # type: ignore[import-untyped]  # h5py ships no stubs or py.typed
 
     path = resolve(name_or_path)
     with h5py.File(path, "r") as f:
@@ -81,7 +87,8 @@ def load_ann(name_or_path, n_train=None, n_test=None) -> dict:
     }
 
 
-def scores_to_distances(scores, metric, queries=None):
+def scores_to_distances(scores: npt.ArrayLike, metric: str,
+                        queries: npt.ArrayLike | None = None) -> npt.NDArray[np.float64]:
     """Convert search scores (higher better) to ann-benchmarks distances (lower better)."""
     s = np.asarray(scores, dtype=np.float64)
     if metric == "ip":
@@ -94,14 +101,15 @@ def scores_to_distances(scores, metric, queries=None):
     raise ValueError(f"unknown metric {metric!r}")
 
 
-def knn_recall(found_dists, true_dists, k, eps=1e-3) -> float:
+def knn_recall(found_dists: npt.ArrayLike, true_dists: npt.ArrayLike, k: int,
+               eps: float = 1e-3) -> float:
     """ann-benchmarks k-nn recall: a found item counts if its distance <= kth true + eps."""
     found = np.asarray(found_dists, dtype=np.float64)[:, :k]
     thresh = np.asarray(true_dists, dtype=np.float64)[:, k - 1 : k] + eps
     return float(np.mean(np.sum(found <= thresh, axis=1) / k))
 
 
-def id_set_recall(found_ids, true_ids, k) -> float:
+def id_set_recall(found_ids: npt.ArrayLike, true_ids: npt.ArrayLike, k: int) -> float:
     """Mean |found[:k] intersect true[:k]| / k. Stricter than knn_recall under ties."""
     f, t = np.asarray(found_ids)[:, :k], np.asarray(true_ids)[:, :k]
     hits = [len(set(a.tolist()) & set(b.tolist())) for a, b in zip(f, t, strict=True)]

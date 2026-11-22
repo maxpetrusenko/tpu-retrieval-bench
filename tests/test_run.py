@@ -2,8 +2,11 @@ import json
 
 import numpy as np
 import pytest
-from bench import plot, run
+from bench import algos, execute, plan, plot, run
+from bench.cli import parse
 from tests._h5 import make_file
+
+from trbench import timing
 
 
 def read_all(root):
@@ -63,7 +66,7 @@ def test_dataset_flag_with_batches(tmp_path):
         assert (r["dataset"]["n_train"], r["dataset"]["n_test"]) == (250, 5)
         assert r["query"]["batch_size"] == 2 and r["query"]["n_batches"] == 3  # 2 + 2 + 1
         assert r["metrics"]["recall"] == 1.0
-        assert r["metrics"]["qps"] == pytest.approx(5 / r["metrics"]["best_search_time_s"])
+        assert r["metrics"]["qps_best"] == pytest.approx(5 / r["metrics"]["best_search_time_s"])
         assert r["metrics"]["score_matrix_bytes"] == 4 * 2 * 250 or r["algorithm"]["name"] == (
             "blockwise_topk")
     assert "sift-128-euclidean" in str(next((tmp_path / "out").rglob("*.json")))
@@ -81,7 +84,7 @@ def test_oom_is_recorded_and_run_continues(tmp_path, monkeypatch):
     def boom(*a, **kw):
         raise RuntimeError("RESOURCE_EXHAUSTED: out of memory allocating 99GB")
 
-    monkeypatch.setitem(run.FACTORIES, "jit_topk", boom)
+    monkeypatch.setitem(algos.FACTORIES, "jit_topk", boom)
     run.main(["--algos", "jit_topk,blockwise", "--m", "4", "--n", "512", "--d", "16",
               "--k", "5", "--out", str(tmp_path)])
     recs = read_all(tmp_path)
@@ -93,18 +96,18 @@ def test_non_oom_errors_propagate(tmp_path, monkeypatch):
     def boom(*a, **kw):
         raise ValueError("bug")
 
-    monkeypatch.setitem(run.FACTORIES, "jit_topk", boom)
+    monkeypatch.setitem(algos.FACTORIES, "jit_topk", boom)
     with pytest.raises(ValueError):
         run.main(["--algos", "jit_topk", "--m", "4", "--n", "512", "--d", "16", "--k", "5",
                   "--out", str(tmp_path)])
 
 
 def test_synthetic_recall_uses_sampled_queries_when_oracle_too_big(tmp_path, monkeypatch):
-    monkeypatch.setattr(run, "REF_LIMIT", 1)
+    monkeypatch.setattr(execute, "REF_LIMIT", 1)
     run.main(["--algos", "jit_topk", "--m", "100", "--n", "512", "--d", "8", "--k", "5",
               "--batch-size", "40", "--out", str(tmp_path)])
     mt = read_all(tmp_path)["jit_topk"]["metrics"]
-    assert mt["recall_sampled_queries"] == run.SAMPLE_QUERIES == 64
+    assert mt["recall_sampled_queries"] == execute.SAMPLE_QUERIES == 64
     assert mt["recall"] >= 0.99
 
 
@@ -122,23 +125,23 @@ def test_f32_compute_has_no_percent_of_peak(tmp_path):
 
 
 def test_sweep_blocks_dedupes_after_clamping():
-    a = run.parse(["--sweep-blocks"])
+    a = parse(["--sweep-blocks"])
     # tiny shape: every bm/bn/bk clamps to the same (16, 128, 128)
-    assert run.block_params("pallas_score", a, 4, 100, 8) == [(16, 128, 128)]
-    assert len(run.block_params("pallas_score", a, 1024, 1_000_000, 128)) == 3 * 3 * 1
+    assert plan.block_params("pallas_score", a, 4, 100, 8) == [(16, 128, 128)]
+    assert len(plan.block_params("pallas_score", a, 1024, 1_000_000, 128)) == 3 * 3 * 1
 
 
 def test_exact_variants_relabelled_when_selection_dominates(tmp_path, monkeypatch):
     monkeypatch.setattr(run.env, "hardware_info", lambda: {
         "platform": "tpu", "device_kind": "TPU v5 lite", "n_devices": 1, "jax_version": "x",
         "jaxlib_version": "x", "libtpu_version": None})
-    real = run.timing.time_batched
+    real = timing.time_batched
     calls = iter([1.0, 1.0, 9.0])  # jit_topk, score_only, select_only
 
     def fake(fn, make_args, nb, **kw):
         return real(fn, make_args, nb, **kw) | {"times_s": [next(calls)] * 5}
 
-    monkeypatch.setattr(run.timing, "time_batched", fake)
+    monkeypatch.setattr(timing, "time_batched", fake)
     run.main(["--algos", "jit_topk,score_only,select_only", "--m", "4", "--n", "512",
               "--d", "8", "--k", "5", "--out", str(tmp_path)])
     recs = read_all(tmp_path)
@@ -172,6 +175,16 @@ def test_plot_groups_never_mix_platform_or_shape_and_keep_best_pallas():
     assert len(g) == 3
     cpu512 = next(v for k, v in g.items() if k[0] == "cpu" and k[2] == 512)
     assert [r["metrics"]["qps"] for r in cpu512] == [30.0]
+
+
+def test_plot_mixed_schema_group_picks_best_config_on_best_pass():
+    old = _rec("cpu", "pallas_score_topk", 512, 20.0, bm=128)  # schema-less: qps is best pass
+    new = _rec("cpu", "pallas_score_topk", 512, 15.0, bm=256)  # median 15, best 40
+    new["schema_version"] = "0.2"
+    new["metrics"]["qps_best"] = 40.0
+    (kept,) = next(iter(plot.groups([old, new]).values()))
+    assert kept is new  # 40 (best) beats 20 (best); 15 (median) vs 20 would pick the old one
+    assert plot.qps_label("best", True).endswith("(mixed 0.1/0.2 records)")
 
 
 def test_plot_cli_writes_one_set_per_group_and_filters(tmp_path):
@@ -222,6 +235,9 @@ def test_default_reps_20_spread_fields_and_schema(tmp_path):
     assert m["n_repetitions"] == 20 and m["latency_stdev_ms"] >= 0
     lo, hi = m["qps_ci95"]
     assert 0 < lo <= m["qps_median"] <= hi
+    assert m["qps"] == m["qps_median"] and lo <= m["qps"] <= hi  # headline sits in its own CI
+    assert m["qps_best"] == pytest.approx(4 / m["best_search_time_s"])  # 4 queries
+    assert m["qps_best"] >= m["qps"]
     assert m["latency_p50_ci95_ms"][0] <= m["latency_p50_ci95_ms"][1]
     assert {"min", "p50", "p95", "p99", "mean"} <= m["latency_ms_per_batch"].keys()
     assert validate_record(rec) == []
@@ -231,7 +247,7 @@ def test_reps_flag_and_minimum(tmp_path, capsys):
     run.main([*ARGS, "--reps", "6", "--out", str(tmp_path)])
     assert read_all(tmp_path)["jit_topk"]["metrics"]["n_repetitions"] == 6
     with pytest.raises(SystemExit):
-        run.parse([*ARGS, "--reps", "4"])
+        parse([*ARGS, "--reps", "4"])
     assert "--reps must be >= 5" in capsys.readouterr().err
 
 

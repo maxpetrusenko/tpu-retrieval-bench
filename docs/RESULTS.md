@@ -5,6 +5,10 @@ Method: `docs/BENCHMARK_METHOD.md`. Spec and claims under test: `docs/SPEC.md`, 
 
 > Run 2 (2026-11-21) added the fused kernels V4 and V4b, block sweeps, the `approx_max_k` recall-target sweep, loop timing and device time: see section 8. Sections 1 to 7 describe Run 1 (2026-11-18); where they say "not measured", "V4 is not built" or "one recall target", section 8 has the measurement. The plots in section 3 are regenerated from Run 2.
 
+## Methodology note: QPS basis
+
+Runs 1 and 2 are schema 0.1 records. Their headline QPS is M / min(time) over 5 timed repetitions, the best pass, and they carry no CI. Records from the next TPU run (schema 0.2, 20 repetitions) use the median pass as the headline `qps`, with a bootstrap 95% CI of that median and the fastest pass kept as `qps_best`. Do not divide a median-basis QPS by a best-pass QPS: `bench.summarize` and `bench.plot` compare on the best pass whenever a table mixes the two and label it. The full rule is in `docs/BENCHMARK_METHOD.md` section 2, items 4 and 6.
+
 ## 1. Setup
 
 | item | value |

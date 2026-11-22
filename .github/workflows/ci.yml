@@ -30,7 +30,11 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run ruff check .
+      - run: uv run mypy
       - run: uv run pytest -q
+      - run: uv build --wheel
+      - name: wheel ships py.typed
+        run: unzip -l dist/*.whl | grep -q 'trbench/py.typed'
   test:
     # Self-hosted runner: never run fork PR code.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository

@@ -31,10 +31,10 @@ def main(argv=None) -> int:
                 pass  # reported by validate_tree
         failures.update(validate_tree(p))
     if args.strict:
-        for path in dirty:
-            failures.setdefault(path, []).append("git.dirty is true (--strict)")
-    for path, errs in failures.items():
-        print(f"FAIL {path}")
+        for dirty_path in dirty:
+            failures.setdefault(dirty_path, []).append("git.dirty is true (--strict)")
+    for fail_path, errs in failures.items():
+        print(f"FAIL {fail_path}")
         for e in errs:
             print(f"  - {e}")
     if dirty and not args.strict:

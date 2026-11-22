@@ -7,7 +7,7 @@ Only chips verified there are keyed; everything else returns None (label "unknow
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 
 class Peak(NamedTuple):
@@ -42,15 +42,15 @@ def flops(m: int, n: int, d: int) -> float:
     return 2.0 * m * n * d
 
 
-def _itemsize(dtype) -> int:
+def _itemsize(dtype: object) -> int:
     key = getattr(dtype, "name", None) or str(dtype)
     if key not in _ITEMSIZE:
         raise ValueError(f"unsupported dtype {dtype!r}")
     return _ITEMSIZE[key]
 
 
-def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype="bf16", *,
-                q_dtype=None, db_dtype=None, n_tiles: int | None = None,
+def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype: object = "bf16", *,
+                q_dtype: object = None, db_dtype: object = None, n_tiles: int | None = None,
                 kprime: int | None = None) -> float:
     """Modeled HBM bytes per search call.
 
@@ -82,7 +82,8 @@ def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype="bf16", *,
     return float(total)
 
 
-def arithmetic_intensity(variant, m, n, d, k, dtype="bf16", **dt) -> float:
+def arithmetic_intensity(variant: str, m: int, n: int, d: int, k: int, dtype: object = "bf16",
+                         **dt: Any) -> float:
     """FLOP per HBM byte (select_only does no matmul: 0.0)."""
     if variant == "select_only":
         return 0.0
@@ -101,12 +102,12 @@ def label(
     n: int,
     d: int,
     k: int,
-    dtype,
+    dtype: object,
     device_kind: str,
     *,
     select_time_s: float | None = None,
     matmul_time_s: float | None = None,
-    **dt,
+    **dt: Any,
 ) -> str:
     """MXU-bound | HBM-bound | VPU/COP-bound | unknown.
 
@@ -130,7 +131,7 @@ def label(
     return "HBM-bound" if t_hbm > t_mxu else "MXU-bound"
 
 
-def percent_of_peak(achieved_flops: float, device_kind: str, dtype="bf16") -> float | None:
+def percent_of_peak(achieved_flops: float, device_kind: str, dtype: object = "bf16") -> float | None:
     """% of the bf16 peak; None for unknown chips and for f32 compute (no f32 peak in table)."""
     p = peak_for(device_kind)
     if p is None or _itemsize(dtype) != 2:

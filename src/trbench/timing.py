@@ -5,14 +5,26 @@ from __future__ import annotations
 import glob
 import tempfile
 import time
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import numpy.typing as npt
 from jax import lax
 
+JitFn = Callable[..., Any]
+MakeArgs = Callable[[int], tuple[Any, ...]]  # batch index -> positional args for the search fn
+Times = Sequence[float]
 
-def compile_aot(fn, *args):
+
+def block_until_ready(x: Any) -> Any:
+    """Typed wrapper: jax.block_until_ready is left unannotated upstream."""
+    return jax.block_until_ready(x)  # type: ignore[no-untyped-call]  # jax: unannotated def
+
+
+def compile_aot(fn: JitFn, *args: Any) -> tuple[Any, float]:
     """AOT lower + compile. Returns (compiled, compile_time_s)."""
     jitted = fn if hasattr(fn, "lower") else jax.jit(fn)
     t0 = time.perf_counter()
@@ -27,8 +39,9 @@ BOOT_SEED = 0
 BOOT_ALPHA = 0.05
 
 
-def bootstrap_ci(values, stat=np.median, *, n_boot=BOOT_RESAMPLES, seed=BOOT_SEED,
-                 alpha=BOOT_ALPHA) -> tuple[float, float]:
+def bootstrap_ci(values: npt.ArrayLike, stat: Callable[..., Any] = np.median, *,
+                 n_boot: int = BOOT_RESAMPLES, seed: int = BOOT_SEED,
+                 alpha: float = BOOT_ALPHA) -> tuple[float, float]:
     """Percentile bootstrap CI of stat(values). stat takes (array, axis=1), e.g. np.median.
 
     Deterministic: fixed seed, numpy only."""
@@ -41,7 +54,7 @@ def bootstrap_ci(values, stat=np.median, *, n_boot=BOOT_RESAMPLES, seed=BOOT_SEE
     return float(lo), float(hi)
 
 
-def summarize(times_s) -> dict:
+def summarize(times_s: npt.ArrayLike) -> dict[str, Any]:
     """Latency summary in ms: min/p50/p95/p99/mean plus stdev and a bootstrap 95% CI of p50."""
     ms = np.asarray(times_s) * 1e3
     lo, hi = bootstrap_ci(ms)
@@ -56,19 +69,32 @@ def summarize(times_s) -> dict:
     }
 
 
-def spread_metrics(times_s, n_queries, latency_ms) -> dict:
+def pass_qps(times_s: Times, n_queries: int) -> npt.NDArray[np.float64]:
+    """Per-pass QPS = n_queries / pass time."""
+    return n_queries / np.asarray(times_s, dtype=np.float64)
+
+
+def median_qps(times_s: Times, n_queries: int) -> float:
+    """Median over passes of per-pass QPS: the headline `qps` of a schema-0.2 record."""
+    return float(np.median(pass_qps(times_s, n_queries)))
+
+
+def spread_metrics(times_s: Times, n_queries: int,
+                   latency_ms: dict[str, Any]) -> dict[str, Any]:
     """Spread fields for a record. times_s = per-pass wall times (s) of n_queries queries.
 
-    QPS spread is over per-pass QPS = n_queries / time; the CI is a bootstrap of the median pass
-    QPS (the headline `qps` stays the best pass). latency_* repeat the batch-latency summary.
+    QPS spread is over per-pass QPS = n_queries / time. `qps_median` is the headline `qps` and
+    `qps_ci95` is the bootstrap CI of that same statistic, so the headline sits in its own CI.
+    The fastest pass is reported separately as `qps_best`. latency_* repeat the batch-latency
+    summary.
     """
-    qps = n_queries / np.asarray(times_s, dtype=np.float64)
+    qps = pass_qps(times_s, n_queries)
     lo, hi = bootstrap_ci(qps)
     return {
         "n_repetitions": len(times_s),
         "latency_stdev_ms": latency_ms["stdev"],
         "latency_p50_ci95_ms": list(latency_ms["p50_ci95"]),
-        "qps_median": float(np.median(qps)),
+        "qps_median": median_qps(times_s, n_queries),
         "qps_stdev": float(qps.std(ddof=1)) if qps.size > 1 else 0.0,
         "qps_ci95": [lo, hi],
         "bootstrap": {"statistic": "median", "n_resamples": BOOT_RESAMPLES, "seed": BOOT_SEED,
@@ -76,7 +102,8 @@ def spread_metrics(times_s, n_queries, latency_ms) -> dict:
     }
 
 
-def time_fn(fn, *args, warmup=3, repetitions=DEFAULT_REPS):
+def time_fn(fn: JitFn, *args: Any, warmup: int = 3,
+            repetitions: int = DEFAULT_REPS) -> dict[str, Any]:
     """Return dict: compile_time_s, times_s (list), latency_ms (min/p50/p95/p99/mean), compiled."""
     if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
@@ -85,15 +112,16 @@ def time_fn(fn, *args, warmup=3, repetitions=DEFAULT_REPS):
                                                          repetitions=repetitions)}
 
 
-def time_compiled(compiled, *args, warmup=3, repetitions=DEFAULT_REPS):
+def time_compiled(compiled: JitFn, *args: Any, warmup: int = 3,
+                  repetitions: int = DEFAULT_REPS) -> dict[str, Any]:
     """Warm + time an already compiled fn. Returns times_s, latency_ms, compiled."""
     for _ in range(warmup):
-        jax.block_until_ready(compiled(*args))
-    times = []
+        block_until_ready(compiled(*args))
+    times: list[float] = []
     for _ in range(repetitions):
         t0 = time.perf_counter()
         out = compiled(*args)
-        jax.block_until_ready(out)
+        block_until_ready(out)
         times.append(time.perf_counter() - t0)
     return {
         "times_s": times,
@@ -102,11 +130,12 @@ def time_compiled(compiled, *args, warmup=3, repetitions=DEFAULT_REPS):
     }
 
 
-def _shape_key(args):
+def _shape_key(args: Any) -> tuple[tuple[int, ...], ...]:
     return tuple(tuple(x.shape) for x in jax.tree_util.tree_leaves(args))
 
 
-def time_batched(fn, make_args, n_batches, *, warmup=3, repetitions=DEFAULT_REPS, keep_out=True):
+def time_batched(fn: JitFn, make_args: MakeArgs, n_batches: int, *, warmup: int = 3,
+                 repetitions: int = DEFAULT_REPS, keep_out: bool = True) -> dict[str, Any]:
     """Time a full pass over n_batches query batches, `repetitions` times.
 
     make_args(i) builds the args for batch i untimed (its device work is synchronized before the
@@ -117,7 +146,8 @@ def time_batched(fn, make_args, n_batches, *, warmup=3, repetitions=DEFAULT_REPS
     """
     if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
-    compiled, compile_s = {}, 0.0
+    compiled: dict[Any, Any] = {}
+    compile_s = 0.0
     for i in range(n_batches):
         args = make_args(i)
         key = _shape_key(args)
@@ -125,16 +155,18 @@ def time_batched(fn, make_args, n_batches, *, warmup=3, repetitions=DEFAULT_REPS
             compiled[key], dt = compile_aot(fn, *args)
             compile_s += dt
             for _ in range(warmup):
-                jax.block_until_ready(compiled[key](*args))
-    passes, batch_times, outs = [], [], None
+                block_until_ready(compiled[key](*args))
+    passes: list[float] = []
+    batch_times: list[float] = []
+    outs: list[Any] = []
     for _ in range(repetitions):
         total, outs = 0.0, []
         for i in range(n_batches):
             args = make_args(i)
-            jax.block_until_ready(args)
+            block_until_ready(args)
             t0 = time.perf_counter()
             out = compiled[_shape_key(args)](*args)
-            jax.block_until_ready(out)
+            block_until_ready(out)
             dt = time.perf_counter() - t0
             total += dt
             batch_times.append(dt)
@@ -157,12 +189,12 @@ def time_batched(fn, make_args, n_batches, *, warmup=3, repetitions=DEFAULT_REPS
 LOOP_CHECKSUM = "sum_all_output_leaves"
 
 
-def _checksum(out):
+def _checksum(out: Any) -> Any:
     leaves = jax.tree_util.tree_leaves(out)
     return sum(jnp.sum(x.astype(jnp.float32)) for x in leaves)
 
 
-def make_loop_fn(fn, inner):
+def make_loop_fn(fn: JitFn, inner: int) -> JitFn:
     """Return jit(*args -> f32 scalar) running fn(*args) `inner` times in a lax.fori_loop.
 
     XLA must not hoist or CSE the repeated search, nor drop it as dead code:
@@ -175,9 +207,9 @@ def make_loop_fn(fn, inner):
     if inner < 1:
         raise ValueError("inner must be >= 1")
 
-    def run(*args):
-        def body(_, acc):
-            a, _ = lax.optimization_barrier((args, acc))
+    def run(*args: Any) -> Any:
+        def body(_: Any, acc: Any) -> Any:
+            a, _ = lax.optimization_barrier((args, acc))  # type: ignore[no-untyped-call]  # jax: unannotated
             return acc + _checksum(fn(*a))
 
         return lax.fori_loop(0, inner, body, jnp.float32(0.0))
@@ -185,7 +217,8 @@ def make_loop_fn(fn, inner):
     return jax.jit(run)
 
 
-def time_loop(fn, *args, inner=16, warmup=3, repetitions=DEFAULT_REPS):
+def time_loop(fn: JitFn, *args: Any, inner: int = 16, warmup: int = 3,
+              repetitions: int = DEFAULT_REPS) -> dict[str, Any]:
     """Per-iteration device-amortized time: each rep is one dispatch of `inner` iterations.
 
     times_s[r] = wall time of rep r / inner. Returns compile_time_s, times_s, latency_ms, inner.
@@ -199,11 +232,13 @@ def time_loop(fn, *args, inner=16, warmup=3, repetitions=DEFAULT_REPS):
             "inner": inner}
 
 
-def time_batched_loop(fn, make_args, n_batches, *, inner=16, warmup=3, repetitions=DEFAULT_REPS):
+def time_batched_loop(fn: JitFn, make_args: MakeArgs, n_batches: int, *, inner: int = 16,
+                      warmup: int = 3, repetitions: int = DEFAULT_REPS) -> dict[str, Any]:
     """Loop-mode twin of time_batched: times_s[r] = sum over batches of per-iteration time."""
     if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
-    compiled, compile_s = {}, 0.0
+    compiled: dict[Any, Any] = {}
+    compile_s = 0.0
     for i in range(n_batches):
         args = make_args(i)
         key = _shape_key(args)
@@ -211,15 +246,16 @@ def time_batched_loop(fn, make_args, n_batches, *, inner=16, warmup=3, repetitio
             compiled[key], dt = compile_aot(make_loop_fn(fn, inner), *args)
             compile_s += dt
             for _ in range(warmup):
-                jax.block_until_ready(compiled[key](*args))
-    passes, batch_times = [], []
+                block_until_ready(compiled[key](*args))
+    passes: list[float] = []
+    batch_times: list[float] = []
     for _ in range(repetitions):
         total = 0.0
         for i in range(n_batches):
             args = make_args(i)
-            jax.block_until_ready(args)
+            block_until_ready(args)
             t0 = time.perf_counter()
-            jax.block_until_ready(compiled[_shape_key(args)](*args))
+            block_until_ready(compiled[_shape_key(args)](*args))
             dt = (time.perf_counter() - t0) / inner
             total += dt
             batch_times.append(dt)
@@ -231,7 +267,8 @@ def time_batched_loop(fn, make_args, n_batches, *, inner=16, warmup=3, repetitio
 # ---- batch-1 serial latency (VectorDBBench serial_latency_*) -----------------------------------
 
 
-def time_serial(fn, make_args, n_queries, *, warmup=3):
+def time_serial(fn: JitFn, make_args: MakeArgs, n_queries: int, *,
+                warmup: int = 3) -> dict[str, Any]:
     """One query at a time, concurrency 1: n_queries timed calls, each ended by block_until_ready.
 
     make_args(i) builds the args for query i (i = 0..n_queries-1; the caller may cycle its query
@@ -243,13 +280,13 @@ def time_serial(fn, make_args, n_queries, *, warmup=3):
     first = make_args(0)
     compiled, compile_s = compile_aot(fn, *first)
     for _ in range(warmup):
-        jax.block_until_ready(compiled(*first))
-    times = []
+        block_until_ready(compiled(*first))
+    times: list[float] = []
     for i in range(n_queries):
         args = make_args(i)
-        jax.block_until_ready(args)
+        block_until_ready(args)
         t0 = time.perf_counter()
-        jax.block_until_ready(compiled(*args))
+        block_until_ready(compiled(*args))
         times.append(time.perf_counter() - t0)
     return {"compile_time_s": compile_s, "times_s": times, "latency_ms": summarize(times)}
 
@@ -259,7 +296,7 @@ def time_serial(fn, make_args, n_queries, *, warmup=3):
 DEVICE_LINE = "XLA Modules"
 
 
-def device_time_from_profile(profile):
+def device_time_from_profile(profile: Any) -> tuple[float | None, int]:
     """Sum 'XLA Modules' event durations (ms) on the first /device: plane of a ProfileData.
 
     Returns (total_ms, n_module_events) or (None, 0) when the trace has no device plane
@@ -274,7 +311,7 @@ def device_time_from_profile(profile):
     return None, 0
 
 
-def device_time(fn, *args, calls=5):
+def device_time(fn: JitFn, *args: Any, calls: int = 5) -> dict[str, Any]:
     """Trace `calls` warm calls with jax.profiler and return per-call device time.
 
     Returns dict(device_time_ms | None, device_time_source, device_time_note | None). Parsed
@@ -287,11 +324,11 @@ def device_time(fn, *args, calls=5):
     except ImportError:
         return {"device_time_ms": None, "device_time_source": None,
                 "device_time_note": "jax.profiler.ProfileData unavailable in this jax"}
-    jax.block_until_ready(fn(*args))  # warm outside the trace
+    block_until_ready(fn(*args))  # warm outside the trace
     with tempfile.TemporaryDirectory() as d:
         with jax.profiler.trace(d):
             for _ in range(calls):
-                jax.block_until_ready(fn(*args))
+                block_until_ready(fn(*args))
         files = glob.glob(f"{d}/**/*.xplane.pb", recursive=True)
         if not files:
             return {"device_time_ms": None, "device_time_source": None,

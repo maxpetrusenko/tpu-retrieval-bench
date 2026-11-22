@@ -5,6 +5,8 @@ Only the best-QPS config per (algo, batch size) is drawn, so a Pallas block swee
 (a) recall vs QPS, log y: exact variants as points, approx_max_k as a curve.
 (b) QPS and p99 batch latency vs batch size per algo.
 (c) percent of chip peak per algo (roofline view).
+QPS is the record headline `qps`: the median pass for schema 0.2+, the best pass for 0.1. A group
+whose records mix the two is drawn on the best pass (`qps_best`), and axes name the basis.
 Filters: --platform --dataset --n --d --k.
 """
 
@@ -14,11 +16,14 @@ import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+from trbench.records import comparison_basis, qps_basis, qps_on
 
 PALETTE = ["#1f6f8b", "#d1495b", "#edae49", "#2e7d32", "#6a4c93", "#444444"]
 plt.rcParams.update({
@@ -69,28 +74,40 @@ def keep(r, a):
     return all(want is None or want == got for want, got in checks)
 
 
-def best_configs(recs):
+def best_configs(recs, basis=None):
     """Per (algo, recall_target, batch size) keep the highest-QPS record.
 
     Collapses the Pallas block sweep (and any other tuning knobs) to the best config per shape.
+    QPS is compared on `basis` (default: the common basis of recs), never median against best.
     """
-    best = {}
+    basis = basis or comparison_basis(recs)
+    best: dict[tuple[Any, ...], dict[str, Any]] = {}
     for r in recs:
         p = r["algorithm"]["params"]
         key = (r["algorithm"]["name"], p.get("recall_target"), r["query"]["batch_size"])
-        if key not in best or r["metrics"]["qps"] > best[key]["metrics"]["qps"]:
+        if key not in best or qps_on(r, basis) > qps_on(best[key], basis):
             best[key] = r
     return list(best.values())
 
 
-def groups(recs):
+def grouped(recs):
+    """Records per group_key, unreduced (so the QPS basis sees every schema in the group)."""
     out = defaultdict(list)
     for r in recs:
         out[group_key(r)].append(r)
-    return {k: best_configs(v) for k, v in sorted(out.items(), key=lambda kv: str(kv[0]))}
+    return dict(sorted(out.items(), key=lambda kv: str(kv[0])))
 
 
-def plot_recall_qps(key, recs, cm, out):
+def groups(recs):
+    return {k: best_configs(v) for k, v in grouped(recs).items()}
+
+
+def qps_label(basis, mixed):
+    """Axis text naming the statistic behind plotted QPS."""
+    return f"QPS, {basis} pass" + (" (mixed 0.1/0.2 records)" if mixed else "")
+
+
+def plot_recall_qps(key, recs, cm, out, basis="best", mixed=False):
     recs = [r for r in recs if r["metrics"].get("recall") is not None]
     if not recs:
         return None
@@ -99,16 +116,16 @@ def plot_recall_qps(key, recs, cm, out):
     for r in recs:
         a = r["algorithm"]
         if a.get("exact", True):
-            ax.scatter(r["metrics"]["recall"], r["metrics"]["qps"], color=cm[a["name"]],
+            ax.scatter(r["metrics"]["recall"], qps_on(r, basis), color=cm[a["name"]],
                        s=36, label=a["name"], zorder=3)
         else:
-            curves[a["name"]].append((r["metrics"]["recall"], r["metrics"]["qps"]))
+            curves[a["name"]].append((r["metrics"]["recall"], qps_on(r, basis)))
     for name, pts in curves.items():
         pts.sort()
         ax.plot(*zip(*pts, strict=True), marker="o", color=cm[name], label=f"{name} (curve)")
     ax.set_yscale("log")
     ax.set_xlabel("recall@k (ann-benchmarks distance threshold)")
-    ax.set_ylabel("QPS (log)")
+    ax.set_ylabel(f"{qps_label(basis, mixed)} (log)")
     ax.set_title(f"Recall vs QPS: {group_title(key)}", fontsize=9)
     h, lb = ax.get_legend_handles_labels()
     uniq = dict(zip(lb, h, strict=True))
@@ -116,17 +133,18 @@ def plot_recall_qps(key, recs, cm, out):
     return save(fig, out, f"{group_tag(key, 'recall_qps')}.png")
 
 
-def plot_batch(key, recs, cm, out):
+def plot_batch(key, recs, cm, out, basis="best", mixed=False):
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(10, 4))
-    series = defaultdict(dict)
+    series: dict[str, dict[int, tuple[float, Any]]] = defaultdict(dict)
     for r in recs:
         m, b = r["metrics"], r["query"]["batch_size"]
-        series[r["algorithm"]["name"]][b] = (m["qps"], m["latency_ms_per_batch"].get("p99"))
+        series[r["algorithm"]["name"]][b] = (qps_on(r, basis),
+                                             m["latency_ms_per_batch"].get("p99"))
     for name, pts in sorted(series.items()):
         xs = sorted(pts)
         a1.plot(xs, [pts[x][0] for x in xs], marker="o", color=cm[name], label=name)
         a2.plot(xs, [pts[x][1] for x in xs], marker="o", color=cm[name], label=name)
-    for ax, yl in ((a1, "QPS"), (a2, "p99 batch latency (ms)")):
+    for ax, yl in ((a1, qps_label(basis, mixed)), (a2, "p99 batch latency (ms)")):
         ax.set_xscale("log", base=2)
         ax.set_yscale("log")
         ax.set_xlabel("batch size M")
@@ -178,10 +196,13 @@ def main(argv=None):
     if not recs:
         raise SystemExit(f"no result JSON under {a.results} matching the filters")
     cm, out = color_map(recs), Path(a.out)
+    raw = grouped(recs)
     paths = []
     for key, rs in groups(recs).items():
-        paths += [plot_recall_qps(key, rs, cm, out), plot_batch(key, rs, cm, out),
-                  plot_peak(key, rs, cm, out)]
+        basis = comparison_basis(raw[key])
+        mixed = len({qps_basis(r) for r in raw[key]}) > 1
+        paths += [plot_recall_qps(key, rs, cm, out, basis, mixed),
+                  plot_batch(key, rs, cm, out, basis, mixed), plot_peak(key, rs, cm, out)]
     for p_ in filter(None, paths):
         print(p_)
 
