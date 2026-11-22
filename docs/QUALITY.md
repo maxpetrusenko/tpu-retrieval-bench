@@ -1,0 +1,132 @@
+# Quality scorecard
+
+read_when: judging whether the repo is ready to release or to cite, or picking the next quality fix.
+
+Eight dimensions, each scored 0 to 10. Target for every dimension: 9 or more. A score of 9 needs every criterion in its table below to pass; a failed criterion caps the dimension at 8. Scores are a maintainer judgement against the criteria, not a computed number. Criteria that a test or CI step checks name it.
+
+## Baseline, 2026-11-22
+
+Scored on `main` at 9b9d654 before the quality pass (#11, #12 and this PR were the response).
+
+| dimension | baseline | main gap |
+|---|---|---|
+| CI/CD | 5 | self-hosted job only, no pins, no matrix, no dependabot |
+| Security | 6 | no policy, unpinned actions, self-hosted runner reachable from forks |
+| Reproducibility | 7 | no single entry point, no dirty-tree guard, counts in docs by hand |
+| Code quality | 7 | no type checking, 497-line `bench/run.py`, no `py.typed` |
+| Packaging/OSS | 7 | no `CITATION.cff`, version 0.1.0, no release changelog section |
+| Correctness/tests | 8 | strong, but a timing-statistics blind spot |
+| Methodology | 8 | 5 repetitions, no spread, headline outside its own CI |
+| Docs/honesty | 9 | caveats stated, numbers traced to JSON |
+| Overall | 7 | |
+
+## Status after this PR
+
+Which change addressed each dimension, and what is still open. "Met" means every criterion below passes on this branch; the overall rescore comes from review of the merged result.
+
+| dimension | addressed by | status |
+|---|---|---|
+| Correctness/tests | #12 (stats tests), this PR (planning, emit and headline tests) | met |
+| Reproducibility | #12 (script, dirty guard), this PR (interpreter resolution) | open: clean TPU rerun |
+| Methodology | #12 (20 reps, CIs), this PR (headline = median, mixed-basis labels) | open: committed results are schema 0.1 |
+| Code quality | this PR (mypy, module split, `py.typed`) | met |
+| CI/CD | #11 (hosted matrix, pins), this PR (mypy and wheel steps) | open: TPU smoke check |
+| Docs/honesty | #12 (doc counts), this PR (QPS basis note, this file) | met |
+| Packaging/OSS | #11 (`SECURITY.md`), this PR (`CITATION.cff`, 0.2.0, classifiers, changelog) | open: release tag (after the TPU rerun) |
+| Security | #11 (pins, permissions, fork guard, policy) | partial: no dependency audit job |
+
+## Remaining open items
+
+1. Clean TPU rerun with 20 repeats and spread: `bash scripts/reproduce_all.sh` on a TPU host from a clean commit. It produces schema 0.2 records, replaces the committed 0.1 results as the quoted numbers, and lets `bench.summarize` give CI-backed verdicts. Until then every committed TPU number is a best-of-5 with no spread.
+2. TPU smoke check: a short run (one shape, one repeat set) that fails when the TPU path breaks. CPU CI cannot see Mosaic lowering or VMEM limits (`CONTRIBUTING.md`).
+3. Tag `v0.2.0` once the rerun lands. No tag is created by the quality pass.
+4. Dependency audit job (Security). Not started.
+
+## Criteria
+
+### Correctness/tests
+
+| criterion | check | status |
+|---|---|---|
+| Exact variants match the float64 oracle | `tests/test_correctness.py`, `tests/test_pallas*.py`, `tests/test_blockwise.py` | pass |
+| Ties, padding and masks are covered | `tests/test_ties.py`, `tests/test_padding.py`, `tests/test_properties.py` (hypothesis) | pass |
+| Result plausibility guard has bad-record tests | `tests/test_validate.py` (one case per rule, including the 0.2 headline rules) | pass |
+| Committed TPU results validate | `tests/test_validate.py::test_committed_tpu_results_are_plausible`, CI step `validate_results results/tpu` | pass |
+| Driver modules have direct tests | `tests/test_plan.py` (job order, file names, registry, timing lanes), `tests/test_run.py` (end to end) | pass |
+| Suite runs on 3.12 and 3.13 | CI `lint-test` matrix | pass |
+
+### Reproducibility
+
+| criterion | check | status |
+|---|---|---|
+| One command regenerates the grid | `scripts/reproduce_all.sh`, `tests/test_reproduce.py` (dry run) | pass |
+| Interpreter does not depend on a bare `python` | `$PYTHON`, else `uv run python`, else `python3`, else `python`; four cases in `tests/test_reproduce.py` | pass |
+| Dependencies locked | `uv.lock`, CI `uv sync --locked` | pass |
+| Records name their code and data | git commit, dirty flag, dataset hash and seed in every record; dirty runs refused without `--allow-dirty` (`tests/test_run.py`) | pass |
+| Doc numbers equal the JSON | `bench/doc_stats.py`, `tests/test_doc_stats.py` | pass |
+| Quoted TPU numbers come from a clean 20-repeat run | rerun in "Remaining open items" | open |
+
+### Methodology
+
+| criterion | check | status |
+|---|---|---|
+| At least 20 repetitions by default, 5 minimum | `--reps`, `tests/test_run.py::test_reps_flag_and_minimum` | pass |
+| Spread reported with a deterministic CI | stdev, bootstrap CI (seed 0), `tests/test_timing.py` | pass |
+| Headline statistic equals the CI statistic | schema 0.2 `qps` = `qps_median` inside `qps_ci95`; validator and `tests/test_validate.py` | pass |
+| Comparisons never mix min with median | `bench.summarize` and `bench.plot` switch to `qps_best` and label it for mixed 0.1/0.2 input; `tests/test_summarize.py`, `tests/test_run.py` | pass |
+| Noise is flagged | "within noise" speedups excluded from fast_p | pass |
+| Published results carry spread | committed TPU records are schema 0.1 (best of 5, no CI) | open |
+
+### Code quality
+
+| criterion | check | status |
+|---|---|---|
+| Library is strictly typed | `uv run mypy`, strict flags on `src/trbench`, CI step | pass |
+| Scripts are type-checked | `check_untyped_defs` on `bench/`; the split run modules also forbid untyped defs | pass |
+| Type ignores are few, targeted and commented | 4 in `src/`, each with an error code and reason; `tests/test_quality.py` | pass |
+| Typed marker ships | `src/trbench/py.typed`, wheel include, CI wheel check | pass |
+| Lint clean | `uv run ruff check .`, CI step | pass |
+| No file reaches 500 lines | `tests/test_quality.py` (largest driver module 268 lines) | pass |
+| Driver split by concern | `bench/cli.py`, `algos.py`, `plan.py`, `execute.py`, `emit.py`, `run.py` | pass |
+
+### CI/CD
+
+| criterion | check | status |
+|---|---|---|
+| Hosted lint, type and test on a version matrix | `lint-test` on 3.12 and 3.13 | pass |
+| Every action pinned to a commit SHA | `tests/test_quality.py`, dependabot updates the pins | pass |
+| Least privilege | `permissions: {}` at top, `contents: read` per job, `persist-credentials: false` | pass |
+| Self-hosted runner never runs fork code | job `if` guard on the repository name | pass |
+| Concurrency and timeouts set | `concurrency` group, `timeout-minutes` per job | pass |
+| Packaging is exercised | CI builds the wheel and checks `py.typed` is inside | pass |
+| TPU path has a smoke check | rerun host job | open |
+
+### Docs/honesty
+
+| criterion | check | status |
+|---|---|---|
+| Every number traced to a committed JSON or marked "derived" | `docs/RESULTS.md`, `CONTRIBUTING.md` publishing rules | pass |
+| Not-measured items are stated | support matrix, "Things that look wrong", limitations | pass |
+| Method is documented where it changes | `docs/BENCHMARK_METHOD.md` items 4 and 6, `docs/RESULTS.md` methodology note | pass |
+| Changelog matches the release | `CHANGELOG.md` section `[0.2.0]`, empty Unreleased (`tests/test_quality.py`) | pass |
+
+### Packaging/OSS
+
+| criterion | check | status |
+|---|---|---|
+| License and notices | `LICENSE` (Apache-2.0), `NOTICE`, SPDX `license` in `pyproject.toml` | pass |
+| Citable | `CITATION.cff` (version and license equal `pyproject.toml`, `tests/test_quality.py`), README "Cite" | pass |
+| Metadata complete | readme, authors, keywords, classifiers, project URLs | pass |
+| Version consistent | `pyproject.toml`, `CITATION.cff`, changelog heading, all 0.2.0 | pass |
+| Contributor path | `CONTRIBUTING.md`, issue and PR templates, `.pre-commit-config.yaml` | pass |
+| Tagged release | `v0.2.0` after the TPU rerun | open |
+
+### Security
+
+| criterion | check | status |
+|---|---|---|
+| Disclosure policy | `SECURITY.md` with private advisory link | pass |
+| Supply chain pinned | SHA-pinned actions, `uv.lock`, dependabot for actions and uv | pass |
+| No credentials in the repo or CI | no secrets referenced in workflows; checkout does not persist the token | pass |
+| Self-hosted runner isolated from forks | job `if` guard | pass |
+| Dependency vulnerability scan | no audit job yet | open |

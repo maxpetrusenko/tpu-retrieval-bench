@@ -16,10 +16,11 @@ Python >= 3.12, jax >= 0.12. Use `uv`; do not swap the package manager.
 ```
 JAX_PLATFORMS=cpu uv run pytest -q
 uv run ruff check .
+uv run mypy
 uv run python bench/run.py --algos jit_topk,blockwise,pallas_score --m 16 --n 65536 --d 128 --k 10
 ```
 
-CI runs the same ruff and pytest on a self-hosted runner (`[self-hosted, vps-builder]`). Pull requests from forks do not run CI automatically: the runner is ours, so a maintainer must read the diff and approve the run. Run the commands above locally first.
+CI runs ruff, mypy and pytest on GitHub-hosted runners (Python 3.12 and 3.13), and ruff, pytest and the result validator on a self-hosted runner (`[self-hosted, vps-builder]`). Pull requests from forks do not run CI automatically: the runner is ours, so a maintainer must read the diff and approve the run. Run the commands above locally first.
 
 ## CPU interpret mode versus TPU claims
 

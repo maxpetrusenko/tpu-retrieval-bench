@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this benchmark or its results, please cite it as below."
+type: software
+title: "tpu-retrieval-bench: exact top-k retrieval on TPU, XLA versus Pallas"
+abstract: "A JAX and Pallas benchmark for exact top-k embedding retrieval on TPU. It measures when a hand-written Pallas kernel beats stock XLA, with recall checks, roofline labels and repetition statistics."
+authors:
+  - family-names: Petrusenko
+    given-names: Max
+version: 0.2.0
+date-released: 2026-11-22
+license: Apache-2.0
+repository-code: "https://github.com/maxpetrusenko/tpu-retrieval-bench"
+keywords:
+  - tpu
+  - pallas
+  - jax
+  - top-k
+  - retrieval
+  - benchmark

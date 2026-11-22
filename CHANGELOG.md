@@ -4,7 +4,23 @@ All notable changes. Format: Keep a Changelog; versions follow `pyproject.toml`.
 
 ## Unreleased
 
+## [0.2.0] - 2026-11-22
+
+Covers PRs #9 to #12 and the quality pass that follows them.
+
+### Changed
+- Schema 0.2 headline QPS: `metrics.qps` is now the median-pass QPS (`qps` = `qps_median`), so it sits inside `qps_ci95`, which bootstraps the same statistic. The fastest pass moves to the new required field `qps_best` (M / min time); `best_search_time_s` is unchanged. `qps_wall` and `qps_loop` follow the median too. Before, the headline was the min-time pass while the CI described the median pass, so the headline could fall outside its own CI. Schema 0.1 records (all committed TPU results) keep their best-pass headline and stay valid. No 0.2 record had been published, so 0.2 was redefined rather than bumped.
+- `bench.validate_results` checks a 0.2 record for headline = median, headline inside CI, `qps_best` = M / min time and `qps_median` against `search_time_s_all`.
+- `bench.summarize` and `bench.plot` compare on the median pass only when every record in a table or plot group is 0.2; a mix of 0.1 and 0.2 is compared on `qps_best`, labelled (`QPS = best pass`, speedups tagged "mixed basis", plot axes name the basis). Documented in `docs/BENCHMARK_METHOD.md` and `docs/RESULTS.md`.
+- `bench/run.py` (497 lines) is split into `bench/cli.py` (arguments), `bench/algos.py` (algorithm registry), `bench/plan.py` (jobs and file names), `bench/execute.py` (timing and recall) and `bench/emit.py` (record building and writing); `bench/run.py` keeps the driver. CLI flags, file names and record contents are unchanged apart from `qps_best` and the QPS basis above. `python bench/run.py` and `python -m bench.run` both work.
+
+### Fixed
+- `scripts/reproduce_all.sh` no longer assumes `python` is on PATH: it uses `$PYTHON`, else `uv run python` (uv installed and a `pyproject.toml` present), else `python3`, else `python`.
+
 ### Added
+- Type checking: `uv run mypy` runs strict on `src/trbench` and with `check_untyped_defs` on `bench/` (the split run modules are fully annotated). `src/trbench/py.typed` ships in the wheel. CI runs mypy in the hosted lint-test job.
+- `CITATION.cff`, a README "Cite" section, `docs/QUALITY.md` (eight-dimension scorecard with pass criteria and evidence).
+- CI (#11): hosted lint/test matrix on Python 3.12 and 3.13, SHA-pinned actions, dependabot, `SECURITY.md`.
 - Statistics: `--reps` defaults to 20 (minimum 5 enforced); records gain stdev and bootstrap 95% CIs of p50 latency and QPS (`schema_version` 0.2, fields required from 0.2, optional for 0.1 records). `bench.summarize` flags speedups over `jit_topk` as "within noise" when QPS CIs overlap.
 - Dirty-tree guard: `bench/run.py` refuses a dirty tree unless `--allow-dirty`; `git.dirty` ignores the output directory. `bench.validate_results --strict` fails dirty records, and the default run prints a dirty-record count.
 - `bench/doc_stats.py` and a test keep the record and dirty counts in `docs/RESULTS.md` equal to the JSON.
