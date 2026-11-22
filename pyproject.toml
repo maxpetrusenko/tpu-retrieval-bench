@@ -5,7 +5,7 @@ description = "Exact top-k retrieval benchmark on TPU: XLA vs Pallas"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["jax>=0.12", "numpy>=2.2"]
+dependencies = ["jax>=0.12,<0.13", "jaxlib>=0.12,<0.13", "numpy>=2.2"]
 
 [project.optional-dependencies]
 hdf5 = ["h5py"]
