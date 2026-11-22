@@ -22,7 +22,7 @@ def _args(m=64, n=8192, d=128):
 
 def test_loop_mode_finite_positive():
     res = timing.time_loop(_search(), *_args(), inner=4)
-    assert res["inner"] == 4 and len(res["times_s"]) == 5
+    assert res["inner"] == 4 and len(res["times_s"]) == timing.DEFAULT_REPS
     assert all(np.isfinite(t) and t > 0 for t in res["times_s"])
     assert res["latency_ms"]["p50"] > 0
 
@@ -111,3 +111,42 @@ def test_cli_loop_headline(tmp_path):
     assert r["timing"]["headline"] == "loop"
     assert mt["best_search_time_s"] == mt["best_search_time_s_loop"]
     assert mt["best_search_time_s_wall"] is None and mt["recall"] >= 0.99
+
+
+def test_bootstrap_ci_deterministic_and_brackets_median():
+    x = np.random.default_rng(1).normal(10.0, 1.0, 30)
+    lo, hi = timing.bootstrap_ci(x)
+    assert (lo, hi) == timing.bootstrap_ci(x)  # fixed seed
+    assert lo < np.median(x) < hi
+    assert timing.bootstrap_ci(x, np.mean, seed=1) != timing.bootstrap_ci(x, np.mean, seed=2)
+    assert timing.bootstrap_ci([5.0, 5.0, 5.0]) == (5.0, 5.0)
+    with pytest.raises(ValueError):
+        timing.bootstrap_ci([])
+
+
+def test_bootstrap_ci_narrows_with_more_samples():
+    rng = np.random.default_rng(2)
+    w = [np.subtract(*timing.bootstrap_ci(rng.normal(10, 1, n))[::-1]) for n in (10, 400)]
+    assert w[1] < w[0]
+
+
+def test_summarize_has_spread_and_old_keys():
+    s = timing.summarize([0.001, 0.002, 0.0015, 0.0012, 0.0011])
+    assert {"min", "p50", "p95", "p99", "mean", "stdev", "p50_ci95"} <= s.keys()
+    assert s["stdev"] > 0 and s["p50_ci95"][0] <= s["p50_ci95"][1]
+    assert timing.summarize([0.001])["stdev"] == 0.0
+
+
+def test_spread_metrics_fields():
+    times = [0.010, 0.011, 0.0105, 0.012, 0.0102, 0.0108]
+    sp = timing.spread_metrics(times, 100, timing.summarize(times))
+    assert sp["n_repetitions"] == 6
+    lo, hi = sp["qps_ci95"]
+    assert lo <= sp["qps_median"] <= hi and sp["qps_stdev"] > 0
+    assert sp["bootstrap"]["seed"] == timing.BOOT_SEED
+
+
+def test_default_reps_is_20_and_minimum_enforced():
+    assert timing.DEFAULT_REPS == 20 and timing.MIN_REPS == 5
+    with pytest.raises(ValueError):
+        timing.time_fn(_search(), *_args(), repetitions=4)

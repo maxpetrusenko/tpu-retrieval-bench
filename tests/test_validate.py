@@ -126,3 +126,57 @@ def test_committed_tpu_results_are_plausible():
     if not root.exists():
         pytest.skip("no committed results/tpu")
     assert validate_tree(root) == {}
+
+
+SPREAD = {
+    "n_repetitions": 5, "latency_stdev_ms": 0.01, "latency_p50_ci95_ms": [0.70, 0.72],
+    "qps_median": 180000.0, "qps_stdev": 1000.0, "qps_ci95": [179000.0, 181000.0],
+}
+SPREAD_KEYS = tuple(SPREAD)
+
+
+def v2(**paths):
+    rec = mutated(schema_version="0.2")
+    rec["metrics"].update(SPREAD)
+    rec["metrics"]["search_time_s_all"] = [0.00072, 0.0007, 0.00071, 0.00073, 0.00075]
+    for path, val in paths.items():
+        *parents, leaf = path.split("__")
+        obj = rec
+        for p in parents:
+            obj = obj[p]
+        obj[leaf] = val
+    return rec
+
+
+def test_spread_required_from_schema_02_but_not_for_01():
+    assert validate_record(GOOD) == []  # old record, no spread: still valid
+    assert validate_record(mutated(schema_version="0.2"))  # new record without spread: invalid
+    for key in SPREAD_KEYS:
+        rec = v2()
+        del rec["metrics"][key]
+        assert any(key in e for e in validate_record(rec)), key
+    assert validate_record(v2()) == []
+
+
+@pytest.mark.parametrize("path,val", [
+    ("metrics__qps_ci95", [2.0, 1.0]),
+    ("metrics__qps_ci95", [1.0]),
+    ("metrics__latency_p50_ci95_ms", [-1.0, 1.0]),
+    ("metrics__qps_stdev", -1.0),
+    ("metrics__n_repetitions", 4),
+    ("metrics__n_repetitions", 6),  # differs from len(search_time_s_all)
+    ("metrics__qps_median", 0),
+])
+def test_bad_spread_flagged(path, val):
+    assert validate_record(v2(**{path: val}))
+
+
+def test_dirty_warning_count_and_strict(tmp_path, capsys):
+    (tmp_path / "a.json").write_text(json.dumps(mutated(git={"commit": "a", "dirty": False})))
+    (tmp_path / "b.json").write_text(json.dumps(mutated(git={"commit": "a", "dirty": True})))
+    assert main([str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "warning: 1 of 2 records have git.dirty=true" in out
+    assert main([str(tmp_path), "--strict"]) == 1
+    out = capsys.readouterr().out
+    assert "b.json" in out and "a.json" not in out and "warning:" not in out

@@ -20,27 +20,72 @@ def compile_aot(fn, *args):
     return compiled, time.perf_counter() - t0
 
 
+MIN_REPS = 5
+DEFAULT_REPS = 20
+BOOT_RESAMPLES = 2000
+BOOT_SEED = 0
+BOOT_ALPHA = 0.05
+
+
+def bootstrap_ci(values, stat=np.median, *, n_boot=BOOT_RESAMPLES, seed=BOOT_SEED,
+                 alpha=BOOT_ALPHA) -> tuple[float, float]:
+    """Percentile bootstrap CI of stat(values). stat takes (array, axis=1), e.g. np.median.
+
+    Deterministic: fixed seed, numpy only."""
+    x = np.asarray(values, dtype=np.float64)
+    if x.size == 0:
+        raise ValueError("bootstrap_ci needs at least one value")
+    idx = np.random.default_rng(seed).integers(0, x.size, size=(n_boot, x.size))
+    dist = stat(x[idx], axis=1)
+    lo, hi = np.percentile(dist, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return float(lo), float(hi)
+
+
 def summarize(times_s) -> dict:
+    """Latency summary in ms: min/p50/p95/p99/mean plus stdev and a bootstrap 95% CI of p50."""
     ms = np.asarray(times_s) * 1e3
+    lo, hi = bootstrap_ci(ms)
     return {
         "min": float(ms.min()),
         "p50": float(np.percentile(ms, 50)),
         "p95": float(np.percentile(ms, 95)),
         "p99": float(np.percentile(ms, 99)),
         "mean": float(ms.mean()),
+        "stdev": float(ms.std(ddof=1)) if ms.size > 1 else 0.0,
+        "p50_ci95": [lo, hi],
     }
 
 
-def time_fn(fn, *args, warmup=3, repetitions=5):
+def spread_metrics(times_s, n_queries, latency_ms) -> dict:
+    """Spread fields for a record. times_s = per-pass wall times (s) of n_queries queries.
+
+    QPS spread is over per-pass QPS = n_queries / time; the CI is a bootstrap of the median pass
+    QPS (the headline `qps` stays the best pass). latency_* repeat the batch-latency summary.
+    """
+    qps = n_queries / np.asarray(times_s, dtype=np.float64)
+    lo, hi = bootstrap_ci(qps)
+    return {
+        "n_repetitions": len(times_s),
+        "latency_stdev_ms": latency_ms["stdev"],
+        "latency_p50_ci95_ms": list(latency_ms["p50_ci95"]),
+        "qps_median": float(np.median(qps)),
+        "qps_stdev": float(qps.std(ddof=1)) if qps.size > 1 else 0.0,
+        "qps_ci95": [lo, hi],
+        "bootstrap": {"statistic": "median", "n_resamples": BOOT_RESAMPLES, "seed": BOOT_SEED,
+                      "level": 1 - BOOT_ALPHA},
+    }
+
+
+def time_fn(fn, *args, warmup=3, repetitions=DEFAULT_REPS):
     """Return dict: compile_time_s, times_s (list), latency_ms (min/p50/p95/p99/mean), compiled."""
-    if warmup < 3 or repetitions < 5:
+    if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
     compiled, compile_s = compile_aot(fn, *args)
     return {"compile_time_s": compile_s, **time_compiled(compiled, *args, warmup=warmup,
                                                          repetitions=repetitions)}
 
 
-def time_compiled(compiled, *args, warmup=3, repetitions=5):
+def time_compiled(compiled, *args, warmup=3, repetitions=DEFAULT_REPS):
     """Warm + time an already compiled fn. Returns times_s, latency_ms, compiled."""
     for _ in range(warmup):
         jax.block_until_ready(compiled(*args))
@@ -61,7 +106,7 @@ def _shape_key(args):
     return tuple(tuple(x.shape) for x in jax.tree_util.tree_leaves(args))
 
 
-def time_batched(fn, make_args, n_batches, *, warmup=3, repetitions=5, keep_out=True):
+def time_batched(fn, make_args, n_batches, *, warmup=3, repetitions=DEFAULT_REPS, keep_out=True):
     """Time a full pass over n_batches query batches, `repetitions` times.
 
     make_args(i) builds the args for batch i untimed (its device work is synchronized before the
@@ -70,7 +115,7 @@ def time_batched(fn, make_args, n_batches, *, warmup=3, repetitions=5, keep_out=
     Returns compile_time_s, times_s, latency_ms (summary over individual batch times),
     outs (outputs of the last pass, or None when keep_out is False).
     """
-    if warmup < 3 or repetitions < 5:
+    if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
     compiled, compile_s = {}, 0.0
     for i in range(n_batches):
@@ -140,12 +185,12 @@ def make_loop_fn(fn, inner):
     return jax.jit(run)
 
 
-def time_loop(fn, *args, inner=16, warmup=3, repetitions=5):
+def time_loop(fn, *args, inner=16, warmup=3, repetitions=DEFAULT_REPS):
     """Per-iteration device-amortized time: each rep is one dispatch of `inner` iterations.
 
     times_s[r] = wall time of rep r / inner. Returns compile_time_s, times_s, latency_ms, inner.
     """
-    if warmup < 3 or repetitions < 5:
+    if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
     compiled, compile_s = compile_aot(make_loop_fn(fn, inner), *args)
     res = time_compiled(compiled, *args, warmup=warmup, repetitions=repetitions)
@@ -154,9 +199,9 @@ def time_loop(fn, *args, inner=16, warmup=3, repetitions=5):
             "inner": inner}
 
 
-def time_batched_loop(fn, make_args, n_batches, *, inner=16, warmup=3, repetitions=5):
+def time_batched_loop(fn, make_args, n_batches, *, inner=16, warmup=3, repetitions=DEFAULT_REPS):
     """Loop-mode twin of time_batched: times_s[r] = sum over batches of per-iteration time."""
-    if warmup < 3 or repetitions < 5:
+    if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
     compiled, compile_s = {}, 0.0
     for i in range(n_batches):

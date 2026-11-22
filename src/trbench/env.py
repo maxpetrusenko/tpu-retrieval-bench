@@ -18,8 +18,11 @@ def _ver(pkg):
         return None
 
 
-def git_info(repo: Path | None = None) -> dict:
+def git_info(repo: Path | None = None, ignore=("results",)) -> dict:
+    """commit + dirty flag. `ignore` paths (relative to the repo) do not count as dirty: the
+    benchmark's own output directory is not a change to the code under test."""
     cwd = repo or Path(__file__).resolve().parents[2]
+    spec = [".", *(f":(exclude){p}" for p in ignore)]
 
     def run(*a):
         return subprocess.run(
@@ -27,7 +30,8 @@ def git_info(repo: Path | None = None) -> dict:
         ).stdout.strip()
 
     try:
-        return {"commit": run("rev-parse", "HEAD"), "dirty": bool(run("status", "--porcelain"))}
+        dirty = bool(run("status", "--porcelain", "--", *spec))
+        return {"commit": run("rev-parse", "HEAD"), "dirty": dirty}
     except (subprocess.CalledProcessError, FileNotFoundError):
         return {"commit": "", "dirty": False}
 

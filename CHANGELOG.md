@@ -5,6 +5,10 @@ All notable changes. Format: Keep a Changelog; versions follow `pyproject.toml`.
 ## Unreleased
 
 ### Added
+- Statistics: `--reps` defaults to 20 (minimum 5 enforced); records gain stdev and bootstrap 95% CIs of p50 latency and QPS (`schema_version` 0.2, fields required from 0.2, optional for 0.1 records). `bench.summarize` flags speedups over `jit_topk` as "within noise" when QPS CIs overlap.
+- Dirty-tree guard: `bench/run.py` refuses a dirty tree unless `--allow-dirty`; `git.dirty` ignores the output directory. `bench.validate_results --strict` fails dirty records, and the default run prints a dirty-record count.
+- `bench/doc_stats.py` and a test keep the record and dirty counts in `docs/RESULTS.md` equal to the JSON.
+- `scripts/reproduce_all.sh`: the full Run-2 grid into a fresh directory, then validate and summarize. The Colab notebook calls it as its single entry point.
 - Run 2 TPU v5e-1 results (`results/tpu/run2`, `results/tpu/run2-devtime`, `docs/RESULTS.md` section 8): fused kernels, block sweeps, `approx_max_k` recall targets, loop and device timing. Plots regenerated from Run 2.
 - V4 `pallas_fused_topk` (`src/trbench/pallas_fused.py`): Pallas matmul with in-kernel per-tile top-k (k <= 128, `kprime` option), stage 2 `lax.top_k`; exact. Optional `pallas_fused_bucket` (approximate, TPU-KNN style bins). Registered in `bench/run.py`, CPU interpret and TPU-lowering tests, roofline candidate bytes (k' padded to 128 lanes).
 - `bench/summarize.py`: KernelBench-style fast_p table (p 1.0, 1.25 vs `jit_topk`) and a flag for exact variants with speedup above 10x.
