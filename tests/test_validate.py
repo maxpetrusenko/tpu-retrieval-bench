@@ -128,9 +128,11 @@ def test_committed_tpu_results_are_plausible():
     assert validate_tree(root) == {}
 
 
+V2_TIMES = [0.00072, 0.0007, 0.00071, 0.00073, 0.00075]
 SPREAD = {
     "n_repetitions": 5, "latency_stdev_ms": 0.01, "latency_p50_ci95_ms": [0.70, 0.72],
-    "qps_median": 180000.0, "qps_stdev": 1000.0, "qps_ci95": [179000.0, 181000.0],
+    "qps_median": 128 / 0.00072, "qps_stdev": 1000.0, "qps_ci95": [170000.0, 183000.0],
+    "qps_best": 128 / 0.0007,
 }
 SPREAD_KEYS = tuple(SPREAD)
 
@@ -138,7 +140,8 @@ SPREAD_KEYS = tuple(SPREAD)
 def v2(**paths):
     rec = mutated(schema_version="0.2")
     rec["metrics"].update(SPREAD)
-    rec["metrics"]["search_time_s_all"] = [0.00072, 0.0007, 0.00071, 0.00073, 0.00075]
+    rec["metrics"]["qps"] = SPREAD["qps_median"]  # 0.2+: headline is the median pass
+    rec["metrics"]["search_time_s_all"] = V2_TIMES
     for path, val in paths.items():
         *parents, leaf = path.split("__")
         obj = rec
@@ -180,3 +183,20 @@ def test_dirty_warning_count_and_strict(tmp_path, capsys):
     assert main([str(tmp_path), "--strict"]) == 1
     out = capsys.readouterr().out
     assert "b.json" in out and "a.json" not in out and "warning:" not in out
+
+
+def test_headline_qps_is_median_pass_with_its_ci_from_schema_02():
+    assert validate_record(v2()) == []
+    best_as_headline = v2(metrics__qps=128 / 0.0007)  # the old min-time headline
+    assert any("equal qps_median" in e for e in validate_record(best_as_headline))
+    outside = v2(metrics__qps_ci95=[178000.0, 183000.0])  # headline below its own CI
+    assert any("outside its own qps_ci95" in e for e in validate_record(outside))
+    wrong_best = v2(metrics__qps_best=1.0)
+    assert any("qps_best" in e for e in validate_record(wrong_best))
+    fake_median = v2(metrics__qps_median=181000.0, metrics__qps=181000.0)
+    assert any("median of" in e for e in validate_record(fake_median))
+
+
+def test_schema_01_keeps_best_pass_headline_rule():
+    assert validate_record(GOOD) == []  # qps = n / best time, no qps_best needed
+    assert any("disagrees" in e for e in validate_record(mutated(metrics__qps=5e9)))

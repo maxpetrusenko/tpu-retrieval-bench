@@ -76,3 +76,42 @@ def test_ci_overlap_edges():
     assert summarize.ci_overlap(a, b) is True  # touching counts as overlap
     assert summarize.ci_overlap(a, _ci(_rec("z", 1.0), 2.1, 3.0)) is False
     assert summarize.ci_overlap(a, _rec("w", 1.0)) is None
+
+
+def _v2(rec, best, ci=None):
+    """Make rec a schema-0.2 record: its `qps` is the median pass, `qps_best` the fastest."""
+    rec["schema_version"] = "0.2"
+    rec["metrics"]["qps_best"] = best
+    if ci:
+        rec["metrics"]["qps_ci95"] = ci
+    return rec
+
+
+def test_median_basis_when_every_record_is_schema_02(tmp_path):
+    _write(tmp_path, [_v2(_rec("jit_matmul_topk", 100.0), 120.0, [95.0, 105.0]),
+                      _v2(_rec("blockwise_topk", 150.0), 200.0, [140.0, 160.0])])
+    out = summarize.render(summarize.load(tmp_path))
+    assert "QPS = median pass (schema 0.2)" in out
+    assert next(ln for ln in out.splitlines() if ln.startswith("| blockwise_topk")).endswith(
+        "| 1.50x |")  # median 150 / median 100, not best 200 / 120
+
+
+def test_mixed_schemas_compare_on_best_pass_and_say_so(tmp_path):
+    old = _rec("jit_matmul_topk", 100.0)  # schema-less = 0.1: qps is the best pass
+    new = _v2(_rec("blockwise_topk", 90.0), 150.0, [85.0, 95.0])  # median 90 < old best 100
+    _write(tmp_path, [old, new])
+    out = summarize.render(summarize.load(tmp_path))
+    assert "QPS = best pass; table mixes schema 0.1" in out
+    row = next(ln for ln in out.splitlines() if ln.startswith("| blockwise_topk"))
+    assert row.endswith("| 1.50x (mixed basis) |")  # best/best, never 90/100 = 0.90x
+    assert "0.90x" not in out
+
+
+def test_basis_helpers():
+    from trbench import records
+    old, new = _rec("x", 10.0), _v2(_rec("y", 8.0), 12.0)
+    assert (records.qps_basis(old), records.qps_basis(new)) == ("best", "median")
+    assert (records.qps_best(old), records.qps_best(new)) == (10.0, 12.0)
+    assert records.comparison_basis([new, new]) == "median"
+    assert records.comparison_basis([old, new]) == "best"
+    assert records.qps_on(new, "best") == 12.0 and records.qps_on(new, "median") == 8.0

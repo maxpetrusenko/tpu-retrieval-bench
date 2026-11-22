@@ -11,6 +11,10 @@ An exact variant with speedup above 10x is flagged for manual review (anti rewar
 Speedups over jit_topk carry a noise flag: "within noise" when the bootstrap 95% CIs of the two
 QPS values (metrics.qps_ci95, schema 0.2+) overlap, "no CI" when either record predates them.
 A within-noise speedup does not count toward fast_p.
+QPS basis: the headline `qps` is the median pass for schema 0.2+ records and the best (min-time)
+pass for 0.1. A shape table whose records all carry the median pass reports it; any table that
+mixes schemas is reported on the best pass (`qps_best`, present in both) and labelled, so a
+median is never divided by a minimum. Such speedups carry "mixed basis" instead of a CI flag.
 Filters: --platform --dataset. Output: stdout or --out FILE.
 """
 
@@ -19,8 +23,10 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 from bench.plot import load
+from trbench.records import comparison_basis, qps_basis, qps_on
 
 EXACT_RECALL_FLOOR = 1.0
 BLOCK_ALGOS = ("pallas_score_topk", "pallas_fused_topk", "pallas_fused_bucket")
@@ -49,21 +55,38 @@ def ci_overlap(a, b):
     return ca[0] <= cb[1] and cb[0] <= ca[1]
 
 
-def noise_flag(r, base):
+def noise_flag(r, base, basis=None):
+    """"mixed basis" when the pair is compared on the best pass because schemas differ, else the
+    CI overlap verdict ("within noise", "" or "no CI" when a record lacks CIs)."""
+    if basis is None:
+        basis = comparison_basis([r, base])
+    if basis == "best" and qps_basis(r) != qps_basis(base):
+        return "mixed basis"
     ov = ci_overlap(r, base)
     return "no CI" if ov is None else ("within noise" if ov else "")
 
 
-def vs_baseline(r, base):
+def vs_baseline(r, base, basis=None):
     """Cell for the 'vs jit_topk' column: speedup plus noise flag; '-' for the baseline."""
     if base is None or r is base or r["algorithm"]["name"] == BASELINE:
         return "-"
-    x = r["metrics"]["qps"] / base["metrics"]["qps"]
-    flag = noise_flag(r, base)
+    basis = basis or comparison_basis([r, base])
+    x = qps_on(r, basis) / qps_on(base, basis)
+    flag = noise_flag(r, base, basis)
     return f"{x:.2f}x" + (f" ({flag})" if flag else "")
 
 
-def row(r, base=None):
+def basis_note(recs):
+    """One-line statement of the statistic behind a table's QPS column."""
+    kinds = {qps_basis(r) for r in recs}
+    if kinds == {"median"}:
+        return "QPS = median pass (schema 0.2)"
+    if kinds == {"best"}:
+        return "QPS = best pass (schema 0.1, no median recorded)"
+    return "QPS = best pass; table mixes schema 0.1 (best only) and 0.2, median not comparable"
+
+
+def row(r, base=None, basis=None):
     m, a = r["metrics"], r["algorithm"]
     lat = m["latency_ms_per_batch"]
     p = a["params"]
@@ -73,9 +96,10 @@ def row(r, base=None):
     elif a["name"] == "approx_max_k":
         algo += f" (target {p.get('recall_target')})"
     return [algo, fmt(m["compile_time_s"], 3), fmt(lat["p50"], 3), fmt(lat["p95"], 3),
-            fmt(m["qps"], 0), fmt(m.get("recall"), 4), fmt(m.get("recall_epsilon_0.01"), 4),
-            fmt(m.get("percent_of_peak")), m.get("roofline_label") or "-",
-            fmt(m.get("selection_over_matmul")), vs_baseline(r, base)]
+            fmt(qps_on(r, basis or qps_basis(r)), 0), fmt(m.get("recall"), 4),
+            fmt(m.get("recall_epsilon_0.01"), 4), fmt(m.get("percent_of_peak")),
+            m.get("roofline_label") or "-", fmt(m.get("selection_over_matmul")),
+            vs_baseline(r, base, basis)]
 
 
 HEAD = ["algo", "compile_s", "p50 ms", "p95 ms", "QPS", "recall", "recall eps0.01",
@@ -88,12 +112,13 @@ def md_table(head, rows):
     return "\n".join(out)
 
 
-def best_per_algo(recs):
-    best = {}
+def best_per_algo(recs, basis=None):
+    basis = basis or comparison_basis(recs)
+    best: dict[tuple[Any, ...], dict[str, Any]] = {}
     for r in recs:
         a = r["algorithm"]
         key = (a["name"], a["params"].get("recall_target"))
-        if key not in best or r["metrics"]["qps"] > best[key]["metrics"]["qps"]:
+        if key not in best or qps_on(r, basis) > qps_on(best[key], basis):
             best[key] = r
     return sorted(best.values(), key=lambda r: (r["algorithm"]["name"],
                                                 r["algorithm"]["params"].get("recall_target") or 0))
@@ -110,10 +135,11 @@ def main_tables(recs):
         by[shape_key(r)].append(r)
     parts = []
     for k in sorted(by, key=lambda x: (x[0], x[1], x[2], x[5])):
-        best = best_per_algo(by[k])
+        basis = comparison_basis(by[k])
+        best = best_per_algo(by[k], basis)
         base = next((r for r in best if r["algorithm"]["name"] == BASELINE), None)
-        rows = [row(r, base) for r in best]
-        parts.append(f"### {shape_title(k)}\n\n{md_table(HEAD, rows)}\n")
+        rows = [row(r, base, basis) for r in best]
+        parts.append(f"### {shape_title(k)}\n\n{basis_note(by[k])}\n\n{md_table(HEAD, rows)}\n")
     return "\n".join(parts)
 
 
@@ -124,18 +150,19 @@ def block_table(recs):
             by[(*shape_key(r), r["algorithm"]["name"])].append(r)
     rows = []
     for k in sorted(by, key=lambda x: (x[0], x[1], x[2], x[5], x[-1])):
-        rs = sorted(by[k], key=lambda r: r["metrics"]["qps"])
+        basis = comparison_basis(by[k])
+        rs = sorted(by[k], key=lambda r: qps_on(r, basis))
         lo, hi = rs[0], rs[-1]
 
         def cfg(r):
             p = r["algorithm"]["params"]
             return f"{p.get('bm')}x{p.get('bn')}x{p.get('bk')}"
 
-        ratio = hi["metrics"]["qps"] / lo["metrics"]["qps"]
-        rows.append([k[-1], shape_title(k[:-1]), str(len(rs)), cfg(hi), fmt(hi["metrics"]["qps"], 0),
-                     cfg(lo), fmt(lo["metrics"]["qps"], 0), fmt(ratio, 3)])
+        ratio = qps_on(hi, basis) / qps_on(lo, basis)
+        rows.append([k[-1], shape_title(k[:-1]), str(len(rs)), cfg(hi), fmt(qps_on(hi, basis), 0),
+                     cfg(lo), fmt(qps_on(lo, basis), 0), fmt(ratio, 3), basis])
     head = ["algo", "shape", "configs", "best bm x bn x bk", "best QPS", "worst config", "worst QPS",
-            "best/worst"]
+            "best/worst", "QPS basis"]
     return md_table(head, rows) if rows else "no pallas records"
 
 
@@ -149,23 +176,30 @@ def is_correct(r):
 
 def speedups(recs):
     """[(algo name, shape key, correct, speedup, noise flag)] over jit_topk, best QPS per
-    algo+shape. Flag: "within noise" (CIs overlap), "no CI" (a record lacks CIs) or ""."""
-    by = defaultdict(dict)
+    algo+shape, compared on the shape's common QPS basis. Flag: "within noise" (CIs overlap),
+    "no CI" (a record lacks CIs), "mixed basis" (0.1 vs 0.2, compared on best pass) or ""."""
+    shape_recs = defaultdict(list)
     for r in recs:
-        name, key = r["algorithm"]["name"], shape_key(r)
-        cur = by[key].get(name)
-        if cur is None or r["metrics"]["qps"] > cur["metrics"]["qps"]:
-            by[key][name] = r
+        shape_recs[shape_key(r)].append(r)
+    by: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = defaultdict(dict)
+    for key, group in shape_recs.items():
+        basis = comparison_basis(group)
+        for r in group:
+            name = r["algorithm"]["name"]
+            cur = by[key].get(name)
+            if cur is None or qps_on(r, basis) > qps_on(cur, basis):
+                by[key][name] = r
     out = []
     for key, algos in by.items():
+        basis = comparison_basis(shape_recs[key])
         base = algos.get(BASELINE)
         if base is None:
             continue
         for name, r in algos.items():
             if name in (BASELINE, "numpy_ref") or not r["algorithm"].get("exact"):
                 continue
-            out.append((name, key, is_correct(r), r["metrics"]["qps"] / base["metrics"]["qps"],
-                        noise_flag(r, base)))
+            out.append((name, key, is_correct(r), qps_on(r, basis) / qps_on(base, basis),
+                        noise_flag(r, base, basis)))
     return out
 
 
