@@ -4,6 +4,13 @@ All notable changes. Format: Keep a Changelog; versions follow `pyproject.toml`.
 
 ## Unreleased
 
+### Changed
+- Code quality: the tree is formatted with `ruff format` (one style commit, listed in `.git-blame-ignore-revs`) and `ruff format --check .` runs in the hosted `lint-test` job and in pre-commit. `bench/` is now checked under mypy `strict`, like `src/trbench`, with four commented ignores for untyped jax functions. `tests/test_quality.py` enforces both.
+
+### Added
+- `tests/test_profile_one.py`: a CPU smoke test for `bench/profile_one.py` (previously 0% coverage).
+- `docs/QUALITY.md` review log entry for the post-v0.2.1 review (overall 8.9, all 9 except Code 8) and the Code criteria now met.
+
 ## [0.2.1] - 2026-11-23
 
 ### Added

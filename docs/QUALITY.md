@@ -12,8 +12,11 @@ Scores come from independent reviews, not from the maintainer.
 |---|---|---|---|---|---|---|---|---|---|---|
 | 2026-11-22 | baseline on `main` at 9b9d654, before the quality pass | 8 | 7 | 8 | 7 | 5 | 9 | 7 | 6 | 7 |
 | 2026-11-22 | after #18 (Run 3 merged) | 9 | 8 | 8 | 9 | 7 | 8 | 8 | 7 | 8.0 |
+| 2026-11-22 | post-v0.2.1 review: overall 8.9 (all 9 except Code 8) | 9 | 9 | 9 | 8 | 9 | 9 | 9 | 9 | 8.9 |
 
 The baseline row is the dimension table from the 9b9d654 baseline (Tests = Correctness/tests, Method = Methodology, Code = Code quality, Pack = Packaging/OSS, Sec = Security). Gaps named by the post-#18 review (CI 7, Security 7, Reproducibility 8, Methodology 8, Docs 8, Packaging 8) drive the items under "Open items".
+
+The post-v0.2.1 review held Code at 8 for three reasons: the code was not `ruff format` clean, the older `bench/` scripts were only checked with `check_untyped_defs`, and `bench/profile_one.py` had 0% coverage. The criteria below that close each of them are now met (formatting, strict `bench/`, `profile_one` smoke test); a re-review is what moves the score.
 
 ## Open items
 
@@ -68,10 +71,12 @@ The baseline row is the dimension table from the 9b9d654 baseline (Tests = Corre
 | criterion | check | checklist |
 |---|---|---|
 | Library is strictly typed | `uv run mypy`, strict flags on `src/trbench`, CI step | done |
-| Scripts are type-checked | `check_untyped_defs` on `bench/`; the split run modules also forbid untyped defs | done |
-| Type ignores are few, targeted and commented | 4 in `src/`, each with an error code and reason; `tests/test_quality.py` | done |
+| Scripts are strictly typed | `strict = true` for `src/trbench` and `bench/`, no per-module exemptions; `tests/test_quality.py` | done |
+| Type ignores are few, targeted and commented | 4 in `src/` and 4 in `bench/` (untyped jax functions only), each with an error code and reason; `tests/test_quality.py` | done |
 | Typed marker ships | `src/trbench/py.typed`, wheel include, CI wheel check | done |
 | Lint clean | `uv run ruff check .`, CI step | done |
+| Formatted | `uv run ruff format --check .` in the hosted `lint-test` job and pre-commit (`ruff-format`); the one-time reformat is in `.git-blame-ignore-revs` (`tests/test_quality.py`) | done |
+| Scripts are covered | `bench/profile_one.py` smoke test on CPU with a tiny shape (`tests/test_profile_one.py`), 96% line coverage | done |
 | No file reaches 500 lines | `tests/test_quality.py` (largest driver module 268 lines) | done |
 | Driver split by concern | `bench/cli.py`, `algos.py`, `plan.py`, `execute.py`, `emit.py`, `run.py` | done |
 
