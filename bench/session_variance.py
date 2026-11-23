@@ -44,18 +44,27 @@ def load_run(root: Path) -> dict[Key, dict[str, Any]]:
             ds, q, alg, met = rec["dataset"], rec["query"], rec["algorithm"], rec["metrics"]
             qps = float(met["qps"])
             ci = met.get("qps_ci95")
-            key: Key = (ds["name"], int(ds["n_train"]), int(ds["dim"]), int(q["k"]),
-                        int(q["batch_size"]), alg["name"],
-                        json.dumps(alg.get("params", {}), sort_keys=True),
-                        path.name.endswith("_sweep.json"))
+            key: Key = (
+                ds["name"],
+                int(ds["n_train"]),
+                int(ds["dim"]),
+                int(q["k"]),
+                int(q["batch_size"]),
+                alg["name"],
+                json.dumps(alg.get("params", {}), sort_keys=True),
+                path.name.endswith("_sweep.json"),
+            )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as e:
             raise ValueError(f"unreadable record {path}: {e}") from e
         if key in cells:
             raise ValueError(f"duplicate cell {key} in {root}: {path}")
         if not (isinstance(ci, list) and len(ci) == 2):
             raise ValueError(f"{path}: missing qps_ci95 (schema 0.2 required)")
-        cells[key] = {"qps": qps, "ci": [float(ci[0]), float(ci[1])],
-                      "file": str(path.relative_to(root))}
+        cells[key] = {
+            "qps": qps,
+            "ci": [float(ci[0]), float(ci[1])],
+            "file": str(path.relative_to(root)),
+        }
     return cells
 
 
@@ -82,15 +91,27 @@ def join(a: dict[Key, dict[str, Any]], b: dict[Key, dict[str, Any]]) -> list[dic
     for key in sorted(set(a) & set(b)):
         ra, rb = a[key], b[key]
         ratio = rb["qps"] / ra["qps"]
-        rows.append({
-            "dataset": key[0], "n": key[1], "d": key[2], "k": key[3], "m": key[4],
-            "algo": key[5], "params": json.loads(key[6]), "sweep": key[7],
-            "size": size_class(key[4]),
-            "qps_a": ra["qps"], "qps_b": rb["qps"], "ci_a": ra["ci"], "ci_b": rb["ci"],
-            "ratio": ratio, "ci_overlap": overlaps(ra["ci"], rb["ci"]),
-            "abs_pct_delta": abs(ratio - 1.0) * 100.0,
-            "file": rb["file"],
-        })
+        rows.append(
+            {
+                "dataset": key[0],
+                "n": key[1],
+                "d": key[2],
+                "k": key[3],
+                "m": key[4],
+                "algo": key[5],
+                "params": json.loads(key[6]),
+                "sweep": key[7],
+                "size": size_class(key[4]),
+                "qps_a": ra["qps"],
+                "qps_b": rb["qps"],
+                "ci_a": ra["ci"],
+                "ci_b": rb["ci"],
+                "ratio": ratio,
+                "ci_overlap": overlaps(ra["ci"], rb["ci"]),
+                "abs_pct_delta": abs(ratio - 1.0) * 100.0,
+                "file": rb["file"],
+            }
+        )
     return rows
 
 
@@ -113,7 +134,9 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         d = [r["abs_pct_delta"] for r in sel]
         out[name] = {
             "cells": len(sel),
-            "median": percentile(d, 50), "p90": percentile(d, 90), "max": max(d),
+            "median": percentile(d, 50),
+            "p90": percentile(d, 90),
+            "max": max(d),
             "ci_overlap": sum(1 for r in sel if r["ci_overlap"]),
             "max_cell": max(sel, key=lambda r: r["abs_pct_delta"])["file"],
         }
@@ -132,8 +155,9 @@ def _shape(key: Key) -> tuple[str, int, int, int, int]:
     return key[:5]
 
 
-def claims(a: dict[Key, dict[str, Any]], b: dict[Key, dict[str, Any]],
-           claim_algo: str, baseline: str) -> list[dict[str, Any]]:
+def claims(
+    a: dict[Key, dict[str, Any]], b: dict[Key, dict[str, Any]], claim_algo: str, baseline: str
+) -> list[dict[str, Any]]:
     """Per shape and config kind (default, tuned): verdict vs baseline in each run."""
     runs = {"a": a, "b": b}
     shapes = sorted({_shape(k) for run in runs.values() for k in run if k[5] == claim_algo})
@@ -141,8 +165,9 @@ def claims(a: dict[Key, dict[str, Any]], b: dict[Key, dict[str, Any]],
     for shape in shapes:
         base: dict[str, dict[str, Any]] = {}
         for tag, run in runs.items():
-            cand = [v for k, v in run.items() if _shape(k) == shape and k[5] == baseline
-                    and not k[7]]
+            cand = [
+                v for k, v in run.items() if _shape(k) == shape and k[5] == baseline and not k[7]
+            ]
             if len(cand) == 1:
                 base[tag] = cand[0]
         if len(base) != 2:
@@ -151,9 +176,11 @@ def claims(a: dict[Key, dict[str, Any]], b: dict[Key, dict[str, Any]],
             picked: dict[str, dict[str, Any]] = {}
             cfg: dict[str, str] = {}
             for tag, run in runs.items():
-                cand_items = [(k, v) for k, v in run.items()
-                              if _shape(k) == shape and k[5] == claim_algo
-                              and (k[7] == (kind == "tuned"))]
+                cand_items = [
+                    (k, v)
+                    for k, v in run.items()
+                    if _shape(k) == shape and k[5] == claim_algo and (k[7] == (kind == "tuned"))
+                ]
                 if not cand_items:
                     continue
                 k, v = max(cand_items, key=lambda kv: kv[1]["qps"])
@@ -164,14 +191,21 @@ def claims(a: dict[Key, dict[str, Any]], b: dict[Key, dict[str, Any]],
                 continue
             va, vb = verdict(picked["a"], base["a"]), verdict(picked["b"], base["b"])
             robust = va == vb and va != "tie"
-            out.append({
-                "dataset": shape[0], "n": shape[1], "m": shape[4], "kind": kind,
-                "cfg_a": cfg["a"], "cfg_b": cfg["b"],
-                "x_jit_a": picked["a"]["qps"] / base["a"]["qps"],
-                "x_jit_b": picked["b"]["qps"] / base["b"]["qps"],
-                "verdict_a": va, "verdict_b": vb,
-                "status": ("robust " + va) if robust else "fragile",
-            })
+            out.append(
+                {
+                    "dataset": shape[0],
+                    "n": shape[1],
+                    "m": shape[4],
+                    "kind": kind,
+                    "cfg_a": cfg["a"],
+                    "cfg_b": cfg["b"],
+                    "x_jit_a": picked["a"]["qps"] / base["a"]["qps"],
+                    "x_jit_b": picked["b"]["qps"] / base["b"]["qps"],
+                    "verdict_a": va,
+                    "verdict_b": vb,
+                    "status": ("robust " + va) if robust else "fragile",
+                }
+            )
     return out
 
 
@@ -179,41 +213,70 @@ def _fmt(x: float) -> str:
     return f"{x:,.0f}"
 
 
-def render_md(name_a: str, name_b: str, rows: list[dict[str, Any]], summ: dict[str, Any],
-              clm: list[dict[str, Any]], claim_algo: str, baseline: str) -> str:
-    lines = [f"# Between-session variance: {name_a} vs {name_b}", "",
-             (f"Ratio = {name_b} / {name_a} (median QPS). Delta = |ratio - 1| * 100. "
-              "CI overlap = the two bootstrap 95% CIs of the median intersect."), "",
-             "| cell | M | " + f"{name_a} QPS | {name_b} QPS | ratio | CIs overlap | abs delta % |",
-             "|---|---|---|---|---|---|---|"]
+def render_md(
+    name_a: str,
+    name_b: str,
+    rows: list[dict[str, Any]],
+    summ: dict[str, Any],
+    clm: list[dict[str, Any]],
+    claim_algo: str,
+    baseline: str,
+) -> str:
+    lines = [
+        f"# Between-session variance: {name_a} vs {name_b}",
+        "",
+        (
+            f"Ratio = {name_b} / {name_a} (median QPS). Delta = |ratio - 1| * 100. "
+            "CI overlap = the two bootstrap 95% CIs of the median intersect."
+        ),
+        "",
+        "| cell | M | " + f"{name_a} QPS | {name_b} QPS | ratio | CIs overlap | abs delta % |",
+        "|---|---|---|---|---|---|---|",
+    ]
     for r in rows:
         label = f"{r['dataset']} N={r['n']:,} {r['algo']}"
         if r["algo"].startswith("pallas") or r["algo"] == "blockwise":
             label += " " + "/".join(str(r["params"].get(x)) for x in ("bm", "bn"))
         if r["sweep"]:
             label += " (sweep)"
-        lines.append(f"| {label} | {r['m']} | {_fmt(r['qps_a'])} | {_fmt(r['qps_b'])} | "
-                     f"{r['ratio']:.3f} | {'yes' if r['ci_overlap'] else 'no'} | "
-                     f"{r['abs_pct_delta']:.1f} |")
-    lines += ["", "| shapes | cells | median % | p90 % | max % | CIs overlap |",
-              "|---|---|---|---|---|---|"]
+        lines.append(
+            f"| {label} | {r['m']} | {_fmt(r['qps_a'])} | {_fmt(r['qps_b'])} | "
+            f"{r['ratio']:.3f} | {'yes' if r['ci_overlap'] else 'no'} | "
+            f"{r['abs_pct_delta']:.1f} |"
+        )
+    lines += [
+        "",
+        "| shapes | cells | median % | p90 % | max % | CIs overlap |",
+        "|---|---|---|---|---|---|",
+    ]
     for k, s in summ.items():
-        lines.append(f"| {k} | {s['cells']} | {s['median']:.1f} | {s['p90']:.1f} | "
-                     f"{s['max']:.1f} | {s['ci_overlap']} of {s['cells']} |")
-    lines += ["", f"## Claims: {claim_algo} vs {baseline}", "",
-              (f"| shape | config | cfg {name_a} | cfg {name_b} | x jit {name_a} "
-               f"| x jit {name_b} | {name_a} | {name_b} | status |"),
-              "|---|---|---|---|---|---|---|---|---|"]
+        lines.append(
+            f"| {k} | {s['cells']} | {s['median']:.1f} | {s['p90']:.1f} | "
+            f"{s['max']:.1f} | {s['ci_overlap']} of {s['cells']} |"
+        )
+    lines += [
+        "",
+        f"## Claims: {claim_algo} vs {baseline}",
+        "",
+        (
+            f"| shape | config | cfg {name_a} | cfg {name_b} | x jit {name_a} "
+            f"| x jit {name_b} | {name_a} | {name_b} | status |"
+        ),
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
     for c in clm:
-        lines.append(f"| {c['dataset']} N={c['n']:,} M={c['m']} | {c['kind']} | {c['cfg_a']} | "
-                     f"{c['cfg_b']} | {c['x_jit_a']:.2f} | {c['x_jit_b']:.2f} | "
-                     f"{c['verdict_a']} | {c['verdict_b']} | {c['status']} |")
+        lines.append(
+            f"| {c['dataset']} N={c['n']:,} M={c['m']} | {c['kind']} | {c['cfg_a']} | "
+            f"{c['cfg_b']} | {c['x_jit_a']:.2f} | {c['x_jit_b']:.2f} | "
+            f"{c['verdict_a']} | {c['verdict_b']} | {c['status']} |"
+        )
     return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("run_a", type=Path)
     ap.add_argument("run_b", type=Path)
     ap.add_argument("--json", type=Path, dest="json_out")
@@ -229,17 +292,24 @@ def main(argv: list[str] | None = None) -> int:
     rows = join(ra, rb)
     only_a, only_b = len(set(ra) - set(rb)), len(set(rb) - set(ra))
     if not rows or only_a or only_b:
-        print(f"ERROR: runs do not cover the same cells ({len(rows)} joined, "
-              f"{only_a} only in A, {only_b} only in B)", file=sys.stderr)
+        print(
+            f"ERROR: runs do not cover the same cells ({len(rows)} joined, "
+            f"{only_a} only in A, {only_b} only in B)",
+            file=sys.stderr,
+        )
         return 1
     summ = summarize(rows)
     clm = claims(ra, rb, a.claim, a.baseline)
     name_a, name_b = a.run_a.name, a.run_b.name
     md = render_md(name_a, name_b, rows, summ, clm, a.claim, a.baseline)
     if a.json_out:
-        a.json_out.write_text(json.dumps(
-            {"run_a": name_a, "run_b": name_b, "cells": rows, "summary": summ, "claims": clm},
-            indent=1) + "\n")
+        a.json_out.write_text(
+            json.dumps(
+                {"run_a": name_a, "run_b": name_b, "cells": rows, "summary": summ, "claims": clm},
+                indent=1,
+            )
+            + "\n"
+        )
     if a.md_out:
         a.md_out.write_text(md)
     print(md)

@@ -12,8 +12,11 @@ PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text())
 def test_python_files_stay_under_500_lines():
     files = [p for d in ("src", "bench", "tests") for p in (ROOT / d).rglob("*.py")]
     assert files
-    too_long = {str(p.relative_to(ROOT)): n for p in files
-                if (n := len(p.read_text().splitlines())) >= MAX_LOC}
+    too_long = {
+        str(p.relative_to(ROOT)): n
+        for p in files
+        if (n := len(p.read_text().splitlines())) >= MAX_LOC
+    }
     assert too_long == {}
 
 
@@ -34,8 +37,12 @@ def test_mypy_is_strict_for_the_library():
 
 
 def test_type_ignores_are_few_targeted_and_commented():
-    hits = [ln for p in (ROOT / "src").rglob("*.py") for ln in p.read_text().splitlines()
-            if "type: ignore" in ln]
+    hits = [
+        ln
+        for p in (ROOT / "src").rglob("*.py")
+        for ln in p.read_text().splitlines()
+        if "type: ignore" in ln
+    ]
     assert len(hits) <= 4
     assert all(re.search(r"type: ignore\[[a-z-]+\]\s+#\s+\S", ln) for ln in hits), hits
 
@@ -52,8 +59,9 @@ def test_changelog_covers_the_current_version_by_a_section_or_pending_entries():
     release.yml (`scripts/changelog.py release`), not here, so work can pile up between releases."""
     version = PYPROJECT["project"]["version"]
     changelog = (ROOT / "CHANGELOG.md").read_text()
-    has_section = re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$",
-                            changelog, re.MULTILINE)
+    has_section = re.search(
+        rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE
+    )
     pending = changelog.split("## Unreleased")[1].split("\n## ")[0].strip()
     assert has_section or pending, f"no [{version}] section and nothing under Unreleased"
 

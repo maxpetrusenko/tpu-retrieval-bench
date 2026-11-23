@@ -45,8 +45,9 @@ def round_up(x: int, m: int) -> int:
     return -(-x // m) * m
 
 
-def merge_topk(run_v: Array, run_i: Array, blk_v: Array, blk_i: Array,
-               k: int) -> tuple[Array, Array]:
+def merge_topk(
+    run_v: Array, run_i: Array, blk_v: Array, blk_i: Array, k: int
+) -> tuple[Array, Array]:
     """Merge running top-k with a block's top-k. Running entries come first (lower ids win ties)."""
     v = jnp.concatenate([run_v, blk_v], axis=1)
     i = jnp.concatenate([run_i, blk_i], axis=1)
@@ -83,8 +84,9 @@ class DenseIndex(NamedTuple):
     valid: Array | None  # (N,) bool or None
 
 
-def prepare_dense(db: Array, mask: Array | None, *, metric: str,
-                  compute_dtype: DTypeLike) -> DenseIndex:
+def prepare_dense(
+    db: Array, mask: Array | None, *, metric: str, compute_dtype: DTypeLike
+) -> DenseIndex:
     """One-time index build (outside the timed region)."""
     e = db.astype(jnp.float32)
     if metric == "cos":
@@ -94,8 +96,9 @@ def prepare_dense(db: Array, mask: Array | None, *, metric: str,
     return DenseIndex(e.astype(compute_dtype), esq, valid)
 
 
-def dense_scores(queries: Array, idx: DenseIndex, *, metric: str,
-                 compute_dtype: DTypeLike) -> Array:
+def dense_scores(
+    queries: Array, idx: DenseIndex, *, metric: str, compute_dtype: DTypeLike
+) -> Array:
     """Full (M, N) f32 scores from a prepared DenseIndex."""
     q = queries.astype(jnp.float32)
     if metric == "cos":

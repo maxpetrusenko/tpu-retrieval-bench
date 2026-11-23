@@ -59,8 +59,15 @@ LANES = 128
 NEG = float(np.finfo(np.float32).min)  # stand-in for -inf until a slot is taken
 
 
-def _accumulate(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, acc_ref: PallasRef, *,
-                nk: int, is_l2: bool) -> None:
+def _accumulate(
+    q_ref: PallasRef,
+    e_ref: PallasRef,
+    aux_ref: PallasRef,
+    acc_ref: PallasRef,
+    *,
+    nk: int,
+    is_l2: bool,
+) -> None:
     """Shared matmul step; returns nothing. On the last k-step acc_ref holds masked scores."""
     kk = pl.program_id(2)
 
@@ -81,9 +88,18 @@ def _accumulate(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, acc_ref:
         acc_ref[...] = jnp.where(s == -jnp.inf, NEG, s)  # -inf is reserved for "taken"
 
 
-def _topk_kernel(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, ov_ref: PallasRef,
-                 oi_ref: PallasRef, acc_ref: PallasRef, *, nk: int, is_l2: bool,
-                 kprime: int) -> None:
+def _topk_kernel(
+    q_ref: PallasRef,
+    e_ref: PallasRef,
+    aux_ref: PallasRef,
+    ov_ref: PallasRef,
+    oi_ref: PallasRef,
+    acc_ref: PallasRef,
+    *,
+    nk: int,
+    is_l2: bool,
+    kprime: int,
+) -> None:
     j = pl.program_id(1)
     kk = pl.program_id(2)
     _accumulate(q_ref, e_ref, aux_ref, acc_ref, nk=nk, is_l2=is_l2)
@@ -111,9 +127,18 @@ def _topk_kernel(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, ov_ref:
         oi_ref[...] = oi
 
 
-def _bucket_kernel(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, ov_ref: PallasRef,
-                   oi_ref: PallasRef, acc_ref: PallasRef, *, nk: int, is_l2: bool,
-                   lanes: int) -> None:
+def _bucket_kernel(
+    q_ref: PallasRef,
+    e_ref: PallasRef,
+    aux_ref: PallasRef,
+    ov_ref: PallasRef,
+    oi_ref: PallasRef,
+    acc_ref: PallasRef,
+    *,
+    nk: int,
+    is_l2: bool,
+    lanes: int,
+) -> None:
     j = pl.program_id(1)
     kk = pl.program_id(2)
     _accumulate(q_ref, e_ref, aux_ref, acc_ref, nk=nk, is_l2=is_l2)
@@ -124,7 +149,7 @@ def _bucket_kernel(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, ov_re
         best = acc_ref[:, 0:lanes]
         slab_id = jnp.zeros((bm, lanes), jnp.int32)
         for s in range(1, bn // lanes):  # strict > keeps the lower column on ties
-            cur = acc_ref[:, s * lanes:(s + 1) * lanes]
+            cur = acc_ref[:, s * lanes : (s + 1) * lanes]
             better = cur > best
             best = jnp.where(better, cur, best)
             slab_id = jnp.where(better, s, slab_id)
@@ -133,9 +158,20 @@ def _bucket_kernel(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, ov_re
         oi_ref[...] = j * bn + slab_id * lanes + lane
 
 
-def fused_tiles(q: Array, e: Array, aux: Array, *, bm: int, bn: int, bk: int, is_l2: bool,
-                interpret: bool, mode: str, kprime: int,
-                lanes: int) -> tuple[tuple[Array, Array], int]:
+def fused_tiles(
+    q: Array,
+    e: Array,
+    aux: Array,
+    *,
+    bm: int,
+    bn: int,
+    bk: int,
+    is_l2: bool,
+    interpret: bool,
+    mode: str,
+    kprime: int,
+    lanes: int,
+) -> tuple[tuple[Array, Array], int]:
     """q (Mp, Dp), e (Cn, Dp), aux (8, Cn) -> candidate values/ids (Mp, n_tiles * width).
 
     width = k' rounded up to 128 (topk) or `lanes` (bucket). Dims are block multiples.
@@ -172,8 +208,9 @@ def fused_tiles(q: Array, e: Array, aux: Array, *, bm: int, bn: int, bk: int, is
     return cand, width
 
 
-def _stage2(cv: Array, ci: Array, *, nt: int, width: int, keep: int, k: int,
-            offset: Array | int) -> tuple[Array, Array]:
+def _stage2(
+    cv: Array, ci: Array, *, nt: int, width: int, keep: int, k: int, offset: Array | int
+) -> tuple[Array, Array]:
     """lax.top_k over per-tile candidates (first `keep` of each `width` slots) -> (M, k)."""
     mp = cv.shape[0]
     if keep < width:
@@ -189,9 +226,20 @@ def _stage2(cv: Array, ci: Array, *, nt: int, width: int, keep: int, k: int,
     return v, ids
 
 
-def search_fused(queries: Array, idx: PallasIndex, *, k: int, metric: str,
-                 compute_dtype: DTypeLike, bm: int, interpret: bool, mode: str, kprime: int,
-                 lanes: int, n: int) -> tuple[Array, Array]:
+def search_fused(
+    queries: Array,
+    idx: PallasIndex,
+    *,
+    k: int,
+    metric: str,
+    compute_dtype: DTypeLike,
+    bm: int,
+    interpret: bool,
+    mode: str,
+    kprime: int,
+    lanes: int,
+    n: int,
+) -> tuple[Array, Array]:
     m, d = queries.shape
     bm = min(bm, round_up(m, 16))
     mp = round_up(m, bm)
@@ -200,14 +248,21 @@ def search_fused(queries: Array, idx: PallasIndex, *, k: int, metric: str,
     if metric == "cos":
         q = l2_normalize(q)
     qc = jnp.pad(q.astype(compute_dtype), ((0, mp - m), (0, dp - d)))
-    kw: dict[str, Any] = {"bm": bm, "bn": idx.bn, "bk": idx.bk, "is_l2": metric == "l2", "interpret": interpret,
-          "mode": mode, "kprime": kprime, "lanes": lanes}
+    kw: dict[str, Any] = {
+        "bm": bm,
+        "bn": idx.bn,
+        "bk": idx.bk,
+        "is_l2": metric == "l2",
+        "interpret": interpret,
+        "mode": mode,
+        "kprime": kprime,
+        "lanes": lanes,
+    }
     keep = kprime if mode == "topk" else lanes
 
     def chunk(e_c: Array, aux_c: Array, off: Array | int) -> tuple[Array, Array]:
         (cv, ci), width = fused_tiles(qc, e_c, aux_c, **kw)
-        return _stage2(cv, ci, nt=e_c.shape[0] // idx.bn, width=width, keep=keep, k=k,
-                       offset=off)
+        return _stage2(cv, ci, nt=e_c.shape[0] // idx.bn, width=width, keep=keep, k=k, offset=off)
 
     # No -inf/-1 init carry: it would win -inf ties against real (masked) ids. Seed with the
     # first chunk instead.
@@ -216,8 +271,10 @@ def search_fused(queries: Array, idx: PallasIndex, *, k: int, metric: str,
     if nfull:
         carry = chunk(idx.ecs[0], idx.auxs[0], offs[0])
         if nfull > 1:
-            def step(carry: tuple[Array, Array],
-                     xs: tuple[Array, Array, Array]) -> tuple[tuple[Array, Array], None]:
+
+            def step(
+                carry: tuple[Array, Array], xs: tuple[Array, Array, Array]
+            ) -> tuple[tuple[Array, Array], None]:
                 e_c, aux_c, off = xs
                 return merge_topk(*carry, *chunk(e_c, aux_c, off), k), None
 
@@ -244,12 +301,22 @@ def check_args(k: int, mode: str, kprime: int, lanes: int, bn: int) -> None:
         raise ValueError(f"lanes must be a multiple of {LANES} dividing bn={bn}, got {lanes}")
 
 
-def make_fused_parts(k: int, n: int, *, metric: str = "ip",
-                     compute_dtype: DTypeLike = jnp.bfloat16, has_mask: bool = False,
-                     bm: int = DEFAULT_BM, bn: int = DEFAULT_BN, bk: int = DEFAULT_BK,
-                     chunk: int = DEFAULT_CHUNK, kprime: int | None = None, mode: str = "topk",
-                     lanes: int = LANES,
-                     interpret: bool | None = None) -> tuple[JitFn, JitFn]:
+def make_fused_parts(
+    k: int,
+    n: int,
+    *,
+    metric: str = "ip",
+    compute_dtype: DTypeLike = jnp.bfloat16,
+    has_mask: bool = False,
+    bm: int = DEFAULT_BM,
+    bn: int = DEFAULT_BN,
+    bk: int = DEFAULT_BK,
+    chunk: int = DEFAULT_CHUNK,
+    kprime: int | None = None,
+    mode: str = "topk",
+    lanes: int = LANES,
+    interpret: bool | None = None,
+) -> tuple[JitFn, JitFn]:
     """(prepare, search) for a db of n rows (static). prepare(db[, mask]) is untimed.
 
     kprime defaults to k (exact); kprime < k is approximate.
@@ -257,13 +324,28 @@ def make_fused_parts(k: int, n: int, *, metric: str = "ip",
     interpret = default_interpret() if interpret is None else interpret
     kprime = k if kprime is None else kprime
     check_args(k, mode, kprime, lanes, bn)
-    pk: dict[str, Any] = {"metric": metric, "compute_dtype": compute_dtype, "bn": bn, "bk": bk, "chunk": chunk}
+    pk: dict[str, Any] = {
+        "metric": metric,
+        "compute_dtype": compute_dtype,
+        "bn": bn,
+        "bk": bk,
+        "chunk": chunk,
+    }
     if has_mask:
         prep_fn = jax.jit(lambda e, mk: prepare_pallas(e, mk, **pk))
     else:
         prep_fn = jax.jit(lambda e: prepare_pallas(e, None, **pk))
-    sk: dict[str, Any] = {"k": k, "metric": metric, "compute_dtype": compute_dtype, "bm": bm,
-          "interpret": interpret, "mode": mode, "kprime": kprime, "lanes": lanes, "n": n}
+    sk: dict[str, Any] = {
+        "k": k,
+        "metric": metric,
+        "compute_dtype": compute_dtype,
+        "bm": bm,
+        "interpret": interpret,
+        "mode": mode,
+        "kprime": kprime,
+        "lanes": lanes,
+        "n": n,
+    }
     return prep_fn, jax.jit(lambda q, idx: search_fused(q, idx, **sk))
 
 
@@ -275,11 +357,19 @@ def make_pallas_fused(k: int, n: int, **kw: Any) -> JitFn:
     return jax.jit(lambda q, e: search(q, prep(e)))
 
 
-def pallas_fused_topk(queries: Array, db: Array, k: int, *, metric: str = "ip",
-                      mask: Array | None = None, compute_dtype: DTypeLike = jnp.bfloat16,
-                      **kw: Any) -> tuple[Array, Array]:
-    f = make_pallas_fused(k, db.shape[0], metric=metric, compute_dtype=compute_dtype,
-                          has_mask=mask is not None, **kw)
+def pallas_fused_topk(
+    queries: Array,
+    db: Array,
+    k: int,
+    *,
+    metric: str = "ip",
+    mask: Array | None = None,
+    compute_dtype: DTypeLike = jnp.bfloat16,
+    **kw: Any,
+) -> tuple[Array, Array]:
+    f = make_pallas_fused(
+        k, db.shape[0], metric=metric, compute_dtype=compute_dtype, has_mask=mask is not None, **kw
+    )
     out: tuple[Array, Array] = f(queries, db) if mask is None else f(queries, db, mask)
     return out
 

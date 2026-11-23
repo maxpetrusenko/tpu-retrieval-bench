@@ -26,11 +26,18 @@ import matplotlib.pyplot as plt
 from trbench.records import comparison_basis, qps_basis, qps_on
 
 PALETTE = ["#1f6f8b", "#d1495b", "#edae49", "#2e7d32", "#6a4c93", "#444444"]
-plt.rcParams.update({
-    "figure.facecolor": "white", "axes.facecolor": "white", "axes.grid": True,
-    "grid.color": "#e3e3e3", "axes.spines.top": False, "axes.spines.right": False,
-    "font.family": "DejaVu Sans", "savefig.dpi": 110,
-})
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "axes.grid": True,
+        "grid.color": "#e3e3e3",
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "font.family": "DejaVu Sans",
+        "savefig.dpi": 110,
+    }
+)
 
 
 def load(root):
@@ -53,8 +60,14 @@ def color_map(recs):
 def group_key(r):
     """Plots never mix platforms or shapes: one group per (platform, dataset, n, d, k, dtype)."""
     ds = r["dataset"]
-    return (r["hardware"]["platform"], ds["name"], ds["n_train"], ds["dim"], r["query"]["k"],
-            r["algorithm"]["params"].get("precision", ds.get("dtype_compute")))
+    return (
+        r["hardware"]["platform"],
+        ds["name"],
+        ds["n_train"],
+        ds["dim"],
+        r["query"]["k"],
+        r["algorithm"]["params"].get("precision", ds.get("dtype_compute")),
+    )
 
 
 def group_tag(key, kind):
@@ -69,8 +82,13 @@ def group_title(key):
 
 def keep(r, a):
     ds = r["dataset"]
-    checks = ((a.platform, r["hardware"]["platform"]), (a.dataset, ds["name"]),
-              (a.n, ds["n_train"]), (a.d, ds["dim"]), (a.k, r["query"]["k"]))
+    checks = (
+        (a.platform, r["hardware"]["platform"]),
+        (a.dataset, ds["name"]),
+        (a.n, ds["n_train"]),
+        (a.d, ds["dim"]),
+        (a.k, r["query"]["k"]),
+    )
     return all(want is None or want == got for want, got in checks)
 
 
@@ -116,8 +134,14 @@ def plot_recall_qps(key, recs, cm, out, basis="best", mixed=False):
     for r in recs:
         a = r["algorithm"]
         if a.get("exact", True):
-            ax.scatter(r["metrics"]["recall"], qps_on(r, basis), color=cm[a["name"]],
-                       s=36, label=a["name"], zorder=3)
+            ax.scatter(
+                r["metrics"]["recall"],
+                qps_on(r, basis),
+                color=cm[a["name"]],
+                s=36,
+                label=a["name"],
+                zorder=3,
+            )
         else:
             curves[a["name"]].append((r["metrics"]["recall"], qps_on(r, basis)))
     for name, pts in curves.items():
@@ -138,8 +162,7 @@ def plot_batch(key, recs, cm, out, basis="best", mixed=False):
     series: dict[str, dict[int, tuple[float, Any]]] = defaultdict(dict)
     for r in recs:
         m, b = r["metrics"], r["query"]["batch_size"]
-        series[r["algorithm"]["name"]][b] = (qps_on(r, basis),
-                                             m["latency_ms_per_batch"].get("p99"))
+        series[r["algorithm"]["name"]][b] = (qps_on(r, basis), m["latency_ms_per_batch"].get("p99"))
     for name, pts in sorted(series.items()):
         xs = sorted(pts)
         a1.plot(xs, [pts[x][0] for x in xs], marker="o", color=cm[name], label=name)
@@ -166,8 +189,14 @@ def plot_peak(key, recs, cm, out):
         ax.bar(names, [max(vals[n]) for n in names], color=[cm[n] for n in names])
         ax.set_ylabel("best % of chip peak bf16 FLOP/s")
     else:
-        ax.text(0.5, 0.5, "no peak for this group\n(CPU, unknown chip, or f32 compute)",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "no peak for this group\n(CPU, unknown chip, or f32 compute)",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         ax.set_axis_off()
     ax.set_title(f"Achieved FLOP/s as % of peak: {group_title(key)}", fontsize=9)
     return save(fig, out, f"{group_tag(key, 'percent_of_peak')}.png")
@@ -201,8 +230,11 @@ def main(argv=None):
     for key, rs in groups(recs).items():
         basis = comparison_basis(raw[key])
         mixed = len({qps_basis(r) for r in raw[key]}) > 1
-        paths += [plot_recall_qps(key, rs, cm, out, basis, mixed),
-                  plot_batch(key, rs, cm, out, basis, mixed), plot_peak(key, rs, cm, out)]
+        paths += [
+            plot_recall_qps(key, rs, cm, out, basis, mixed),
+            plot_batch(key, rs, cm, out, basis, mixed),
+            plot_peak(key, rs, cm, out),
+        ]
     for p_ in filter(None, paths):
         print(p_)
 

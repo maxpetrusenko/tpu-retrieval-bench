@@ -43,8 +43,14 @@ def fmt(x, nd=2):
 
 def shape_key(r):
     ds, q = r["dataset"], r["query"]
-    return (r["hardware"]["platform"], ds["name"], ds["n_train"], ds["dim"], q["k"],
-            q["batch_size"])
+    return (
+        r["hardware"]["platform"],
+        ds["name"],
+        ds["n_train"],
+        ds["dim"],
+        q["k"],
+        q["batch_size"],
+    )
 
 
 def ci_overlap(a, b):
@@ -56,7 +62,7 @@ def ci_overlap(a, b):
 
 
 def noise_flag(r, base, basis=None):
-    """"mixed basis" when the pair is compared on the best pass because schemas differ, else the
+    """ "mixed basis" when the pair is compared on the best pass because schemas differ, else the
     CI overlap verdict ("within noise", "" or "no CI" when a record lacks CIs)."""
     if basis is None:
         basis = comparison_basis([r, base])
@@ -95,15 +101,34 @@ def row(r, base=None, basis=None):
         algo += f" (bm{p.get('bm')},bn{p.get('bn')},bk{p.get('bk')})"
     elif a["name"] == "approx_max_k":
         algo += f" (target {p.get('recall_target')})"
-    return [algo, fmt(m["compile_time_s"], 3), fmt(lat["p50"], 3), fmt(lat["p95"], 3),
-            fmt(qps_on(r, basis or qps_basis(r)), 0), fmt(m.get("recall"), 4),
-            fmt(m.get("recall_epsilon_0.01"), 4), fmt(m.get("percent_of_peak")),
-            m.get("roofline_label") or "-", fmt(m.get("selection_over_matmul")),
-            vs_baseline(r, base, basis)]
+    return [
+        algo,
+        fmt(m["compile_time_s"], 3),
+        fmt(lat["p50"], 3),
+        fmt(lat["p95"], 3),
+        fmt(qps_on(r, basis or qps_basis(r)), 0),
+        fmt(m.get("recall"), 4),
+        fmt(m.get("recall_epsilon_0.01"), 4),
+        fmt(m.get("percent_of_peak")),
+        m.get("roofline_label") or "-",
+        fmt(m.get("selection_over_matmul")),
+        vs_baseline(r, base, basis),
+    ]
 
 
-HEAD = ["algo", "compile_s", "p50 ms", "p95 ms", "QPS", "recall", "recall eps0.01",
-        "% peak", "roofline", "sel/matmul", "vs jit_topk"]
+HEAD = [
+    "algo",
+    "compile_s",
+    "p50 ms",
+    "p95 ms",
+    "QPS",
+    "recall",
+    "recall eps0.01",
+    "% peak",
+    "roofline",
+    "sel/matmul",
+    "vs jit_topk",
+]
 
 
 def md_table(head, rows):
@@ -120,8 +145,10 @@ def best_per_algo(recs, basis=None):
         key = (a["name"], a["params"].get("recall_target"))
         if key not in best or qps_on(r, basis) > qps_on(best[key], basis):
             best[key] = r
-    return sorted(best.values(), key=lambda r: (r["algorithm"]["name"],
-                                                r["algorithm"]["params"].get("recall_target") or 0))
+    return sorted(
+        best.values(),
+        key=lambda r: (r["algorithm"]["name"], r["algorithm"]["params"].get("recall_target") or 0),
+    )
 
 
 def shape_title(k):
@@ -159,10 +186,30 @@ def block_table(recs):
             return f"{p.get('bm')}x{p.get('bn')}x{p.get('bk')}"
 
         ratio = qps_on(hi, basis) / qps_on(lo, basis)
-        rows.append([k[-1], shape_title(k[:-1]), str(len(rs)), cfg(hi), fmt(qps_on(hi, basis), 0),
-                     cfg(lo), fmt(qps_on(lo, basis), 0), fmt(ratio, 3), basis])
-    head = ["algo", "shape", "configs", "best bm x bn x bk", "best QPS", "worst config", "worst QPS",
-            "best/worst", "QPS basis"]
+        rows.append(
+            [
+                k[-1],
+                shape_title(k[:-1]),
+                str(len(rs)),
+                cfg(hi),
+                fmt(qps_on(hi, basis), 0),
+                cfg(lo),
+                fmt(qps_on(lo, basis), 0),
+                fmt(ratio, 3),
+                basis,
+            ]
+        )
+    head = [
+        "algo",
+        "shape",
+        "configs",
+        "best bm x bn x bk",
+        "best QPS",
+        "worst config",
+        "worst QPS",
+        "best/worst",
+        "QPS basis",
+    ]
     return md_table(head, rows) if rows else "no pallas records"
 
 
@@ -198,8 +245,15 @@ def speedups(recs):
         for name, r in algos.items():
             if name in (BASELINE, "numpy_ref") or not r["algorithm"].get("exact"):
                 continue
-            out.append((name, key, is_correct(r), qps_on(r, basis) / qps_on(base, basis),
-                        noise_flag(r, base, basis)))
+            out.append(
+                (
+                    name,
+                    key,
+                    is_correct(r),
+                    qps_on(r, basis) / qps_on(base, basis),
+                    noise_flag(r, base, basis),
+                )
+            )
     return out
 
 
@@ -217,8 +271,12 @@ def fast_p_table(recs):
 
 
 def suspect_speedups(recs):
-    return [f"exact variant speedup {x:.1f}x > {SUSPECT_SPEEDUP:g}x over jit_topk, review by hand: "
-            f"{n} {shape_title(k)}" for n, k, _, x, _ in speedups(recs) if x > SUSPECT_SPEEDUP]
+    return [
+        f"exact variant speedup {x:.1f}x > {SUSPECT_SPEEDUP:g}x over jit_topk, review by hand: "
+        f"{n} {shape_title(k)}"
+        for n, k, _, x, _ in speedups(recs)
+        if x > SUSPECT_SPEEDUP
+    ]
 
 
 def anomalies(recs):
@@ -238,11 +296,21 @@ def anomalies(recs):
 
 def render(recs):
     notes = anomalies(recs)
-    return "\n".join([
-        f"{len(recs)} records\n", main_tables(recs), "## Pallas block sensitivity\n",
-        block_table(recs), "\n## fast_p vs jit_topk (exact variants)\n", fast_p_table(recs),
-        "\n## Flags\n",
-        "\n".join(f"- {n}" for n in notes) if notes else "none"]) + "\n"
+    return (
+        "\n".join(
+            [
+                f"{len(recs)} records\n",
+                main_tables(recs),
+                "## Pallas block sensitivity\n",
+                block_table(recs),
+                "\n## fast_p vs jit_topk (exact variants)\n",
+                fast_p_table(recs),
+                "\n## Flags\n",
+                "\n".join(f"- {n}" for n in notes) if notes else "none",
+            ]
+        )
+        + "\n"
+    )
 
 
 def main(argv=None):
@@ -252,9 +320,12 @@ def main(argv=None):
     p.add_argument("--dataset", default=None)
     p.add_argument("--out", default=None)
     a = p.parse_args(argv)
-    recs = [r for r in load(a.results)
-            if a.platform in (None, r["hardware"]["platform"])
-            and a.dataset in (None, r["dataset"]["name"])]
+    recs = [
+        r
+        for r in load(a.results)
+        if a.platform in (None, r["hardware"]["platform"])
+        and a.dataset in (None, r["dataset"]["name"])
+    ]
     if not recs:
         raise SystemExit(f"no result JSON under {a.results} matching the filters")
     text = render(recs)

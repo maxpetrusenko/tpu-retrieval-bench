@@ -13,8 +13,13 @@ def _normalize(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     return x / np.maximum(n, 1e-30)
 
 
-def scores_ref(queries: npt.ArrayLike, db: npt.ArrayLike, *, metric: str = "ip",
-               mask: npt.ArrayLike | None = None) -> npt.NDArray[np.float64]:
+def scores_ref(
+    queries: npt.ArrayLike,
+    db: npt.ArrayLike,
+    *,
+    metric: str = "ip",
+    mask: npt.ArrayLike | None = None,
+) -> npt.NDArray[np.float64]:
     """Full (M, N) float64 score matrix; masked candidates are -inf."""
     if metric not in METRICS:
         raise ValueError(f"unknown metric {metric!r}")
@@ -30,9 +35,15 @@ def scores_ref(queries: npt.ArrayLike, db: npt.ArrayLike, *, metric: str = "ip",
     return s
 
 
-def numpy_ref(queries: npt.ArrayLike, db: npt.ArrayLike, k: int, *, metric: str = "ip",
-              mask: npt.ArrayLike | None = None,
-              compute_dtype: object = None) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.int32]]:
+def numpy_ref(
+    queries: npt.ArrayLike,
+    db: npt.ArrayLike,
+    k: int,
+    *,
+    metric: str = "ip",
+    mask: npt.ArrayLike | None = None,
+    compute_dtype: object = None,
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.int32]]:
     """Return (scores (M,k) float32, ids (M,k) int32). compute_dtype is ignored (float64)."""
     s = scores_ref(queries, db, metric=metric, mask=mask)
     # stable sort on negated scores keeps lower id first among ties

@@ -47,16 +47,28 @@ def collect(root) -> dict:
         g["dirty"] += is_dirty(rec)
     total = sum(g["records"] for g in groups.values())
     dirty = sum(g["dirty"] for g in groups.values())
-    return {"groups": {k: dict(v) for k, v in groups.items()}, "records": total,
-            "dirty": dirty, "other_json": other}
+    return {
+        "groups": {k: dict(v) for k, v in groups.items()},
+        "records": total,
+        "dirty": dirty,
+        "other_json": other,
+    }
 
 
 def render(stats, root=DEFAULT_ROOT) -> str:
     clean = stats["records"] - stats["dirty"]
-    sentence = (f"`git.dirty` is true on {stats['dirty']} of the {stats['records']} records "
-                f"under `{root}/` ({clean} clean). Per directory:")
-    lines = [BEGIN, "", sentence, "",
-             "| directory | records | dirty | clean |", "|---|---|---|---|"]
+    sentence = (
+        f"`git.dirty` is true on {stats['dirty']} of the {stats['records']} records "
+        f"under `{root}/` ({clean} clean). Per directory:"
+    )
+    lines = [
+        BEGIN,
+        "",
+        sentence,
+        "",
+        "| directory | records | dirty | clean |",
+        "|---|---|---|---|",
+    ]
     for name, g in sorted(stats["groups"].items()):
         lines.append(f"| `{name}` | {g['records']} | {g['dirty']} | {g['records'] - g['dirty']} |")
     lines += ["", END]
@@ -68,12 +80,13 @@ def splice(text, block) -> str:
     i, j = text.find(BEGIN), text.find(END)
     if i < 0 or j < i:
         raise ValueError("doc_stats markers not found")
-    return text[:i] + block + text[j + len(END):]
+    return text[:i] + block + text[j + len(END) :]
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--results", default=DEFAULT_ROOT)
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--write", metavar="DOC", help="rewrite the marked block in DOC")
@@ -89,8 +102,10 @@ def main(argv=None) -> int:
         doc.write_text(new)
         return 0
     if new != doc.read_text():
-        print(f"{doc}: doc_stats block is stale; run python -m bench.doc_stats --write {doc}",
-              file=sys.stderr)
+        print(
+            f"{doc}: doc_stats block is stale; run python -m bench.doc_stats --write {doc}",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

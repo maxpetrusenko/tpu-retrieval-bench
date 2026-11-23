@@ -35,6 +35,11 @@ def test_constraints_regenerate_cleanly():
     bash, uv = shutil.which("bash"), shutil.which("uv")
     if bash is None or uv is None:
         pytest.skip("needs bash and uv")
-    r = subprocess.run([bash, str(ROOT / "scripts" / "export_constraints.sh"), "--check"],
-                       capture_output=True, text=True, cwd=ROOT, check=False)
+    r = subprocess.run(
+        [bash, str(ROOT / "scripts" / "export_constraints.sh"), "--check"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=False,
+    )
     assert r.returncode == 0, r.stderr

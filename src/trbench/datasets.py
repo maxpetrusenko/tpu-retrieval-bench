@@ -24,8 +24,13 @@ def resolve(name_or_path: str | Path) -> Path:
     return DATA_DIR / f"{name_or_path}.hdf5"
 
 
-def bruteforce_gt(train_in: npt.ArrayLike, test_in: npt.ArrayLike, metric: str, k: int = 100,
-                  chunk: int | None = None) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.float32]]:
+def bruteforce_gt(
+    train_in: npt.ArrayLike,
+    test_in: npt.ArrayLike,
+    metric: str,
+    k: int = 100,
+    chunk: int | None = None,
+) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.float32]]:
     """Exact (neighbors, distances) in ann-benchmarks convention; used for n_train subsets.
 
     float32 throughout; queries are chunked so a chunk x N distance block stays near 256 MB.
@@ -33,10 +38,12 @@ def bruteforce_gt(train_in: npt.ArrayLike, test_in: npt.ArrayLike, metric: str, 
     train: npt.NDArray[np.float32] = np.asarray(train_in, dtype=np.float32)
     test: npt.NDArray[np.float32] = np.asarray(test_in, dtype=np.float32)
     if metric == "cos":
-        train = (train / np.maximum(np.linalg.norm(train, axis=1, keepdims=True), 1e-30)
-                 ).astype(np.float32)
-        test = (test / np.maximum(np.linalg.norm(test, axis=1, keepdims=True), 1e-30)
-                ).astype(np.float32)
+        train = (train / np.maximum(np.linalg.norm(train, axis=1, keepdims=True), 1e-30)).astype(
+            np.float32
+        )
+        test = (test / np.maximum(np.linalg.norm(test, axis=1, keepdims=True), 1e-30)).astype(
+            np.float32
+        )
     k = min(k, len(train))
     chunk = chunk or max(1, int(64e6 // max(len(train), 1)))
     e2 = np.sum(train * train, axis=1)
@@ -58,8 +65,9 @@ def bruteforce_gt(train_in: npt.ArrayLike, test_in: npt.ArrayLike, metric: str, 
     return ids, dists
 
 
-def load_ann(name_or_path: str | Path, n_train: int | None = None,
-             n_test: int | None = None) -> dict[str, Any]:
+def load_ann(
+    name_or_path: str | Path, n_train: int | None = None, n_test: int | None = None
+) -> dict[str, Any]:
     """Load an ann-benchmarks HDF5 -> dict(train, test, neighbors, distances, metric).
 
     metric: euclidean -> "l2", angular -> "cos". If n_train truncates the corpus the stored
@@ -82,13 +90,17 @@ def load_ann(name_or_path: str | Path, n_train: int | None = None,
     if len(train) < full_n:
         neighbors, distances = bruteforce_gt(train, test, metric)
     return {
-        "train": train, "test": test, "neighbors": neighbors,
-        "distances": distances, "metric": metric,
+        "train": train,
+        "test": test,
+        "neighbors": neighbors,
+        "distances": distances,
+        "metric": metric,
     }
 
 
-def scores_to_distances(scores: npt.ArrayLike, metric: str,
-                        queries: npt.ArrayLike | None = None) -> npt.NDArray[np.float64]:
+def scores_to_distances(
+    scores: npt.ArrayLike, metric: str, queries: npt.ArrayLike | None = None
+) -> npt.NDArray[np.float64]:
     """Convert search scores (higher better) to ann-benchmarks distances (lower better)."""
     s = np.asarray(scores, dtype=np.float64)
     if metric == "ip":
@@ -101,8 +113,9 @@ def scores_to_distances(scores: npt.ArrayLike, metric: str,
     raise ValueError(f"unknown metric {metric!r}")
 
 
-def knn_recall(found_dists: npt.ArrayLike, true_dists: npt.ArrayLike, k: int,
-               eps: float = 1e-3) -> float:
+def knn_recall(
+    found_dists: npt.ArrayLike, true_dists: npt.ArrayLike, k: int, eps: float = 1e-3
+) -> float:
     """ann-benchmarks k-nn recall: a found item counts if its distance <= kth true + eps."""
     found = np.asarray(found_dists, dtype=np.float64)[:, :k]
     thresh = np.asarray(true_dists, dtype=np.float64)[:, k - 1 : k] + eps

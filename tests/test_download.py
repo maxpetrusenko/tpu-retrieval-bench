@@ -32,8 +32,9 @@ def test_download_sends_browser_user_agent(tmp_path):
 def test_fetch_uses_download_and_checks_size(tmp_path, monkeypatch):
     monkeypatch.setitem(download.DATASETS, "tiny", 3)
     calls = []
-    monkeypatch.setattr(download, "download", lambda url, dest: (calls.append(url),
-                                                                  dest.write_bytes(b"abc")))
+    monkeypatch.setattr(
+        download, "download", lambda url, dest: (calls.append(url), dest.write_bytes(b"abc"))
+    )
     p = download.fetch("tiny", tmp_path)
     assert p.read_bytes() == b"abc" and calls == [download.URL.format("tiny")]
 

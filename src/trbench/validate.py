@@ -19,21 +19,47 @@ from trbench.records import MEDIAN_QPS_SCHEMA, schema_tuple
 
 Record = dict[str, Any]
 
-TOP_KEYS = ("schema_version", "run_id", "dataset", "algorithm", "query", "hardware", "metrics",
-            "timing", "git", "created_at")
+TOP_KEYS = (
+    "schema_version",
+    "run_id",
+    "dataset",
+    "algorithm",
+    "query",
+    "hardware",
+    "metrics",
+    "timing",
+    "git",
+    "created_at",
+)
 DATASET_KEYS = ("name", "n_train", "n_test", "dim", "distance", "dtype_compute")
 ALGO_KEYS = ("name", "params", "exact")
 QUERY_KEYS = ("k", "batch_size", "mode", "n_queries_timed")
 HW_KEYS = ("platform", "device_kind", "n_devices")
-METRIC_KEYS = ("recall", "qps", "best_search_time_s", "search_time_s_all",
-               "latency_ms_per_batch", "compile_time_s", "index_size_bytes", "flops_achieved",
-               "flops_peak", "percent_of_peak")
+METRIC_KEYS = (
+    "recall",
+    "qps",
+    "best_search_time_s",
+    "search_time_s_all",
+    "latency_ms_per_batch",
+    "compile_time_s",
+    "index_size_bytes",
+    "flops_achieved",
+    "flops_peak",
+    "percent_of_peak",
+)
 LATENCY_KEYS = ("min", "p50", "p95", "p99")
 # variants that time a stage only and carry no result ids to score
 NO_RECALL_ALGOS = ("score_only", "select_only")
 SPREAD_SCHEMA = (0, 2)  # schema_version at which the spread fields became required
-SPREAD_KEYS = ("n_repetitions", "latency_stdev_ms", "latency_p50_ci95_ms", "qps_median",
-               "qps_stdev", "qps_ci95", "qps_best")
+SPREAD_KEYS = (
+    "n_repetitions",
+    "latency_stdev_ms",
+    "latency_p50_ci95_ms",
+    "qps_median",
+    "qps_stdev",
+    "qps_ci95",
+    "qps_best",
+)
 MEDIAN_TOL = 1e-6  # relative: qps_median vs the median of per-pass QPS from search_time_s_all
 EXACT_RECALL_TOL = 1e-9
 MIN_REPS = 5
@@ -96,7 +122,8 @@ def _check_timing(rec: Record, errs: list[str]) -> None:
         errs.append("metrics.best_search_time_s: not equal to min(search_time_s_all)")
     lat = m.get("latency_ms_per_batch")
     if _missing(lat, LATENCY_KEYS, "metrics.latency_ms_per_batch", errs) and all(
-            k in lat for k in LATENCY_KEYS):
+        k in lat for k in LATENCY_KEYS
+    ):
         vals = [lat[k] for k in LATENCY_KEYS]
         if not all(_num(v) and v > 0 for v in vals):
             errs.append("metrics.latency_ms_per_batch: quantiles must be positive numbers")
@@ -126,13 +153,15 @@ def _check_peak(rec: Record, errs: list[str]) -> None:
 
 
 def is_dirty(rec: object) -> bool:
-    return bool(isinstance(rec, dict) and isinstance(rec.get("git"), dict)
-                and rec["git"].get("dirty"))
+    return bool(
+        isinstance(rec, dict) and isinstance(rec.get("git"), dict) and rec["git"].get("dirty")
+    )
 
 
 def _interval_ok(x: object) -> bool:
-    return (isinstance(x, list) and len(x) == 2 and all(_num(v) and v > 0 for v in x)
-            and x[0] <= x[1])
+    return (
+        isinstance(x, list) and len(x) == 2 and all(_num(v) and v > 0 for v in x) and x[0] <= x[1]
+    )
 
 
 def _interval(x: object, where: str, errs: list[str]) -> None:

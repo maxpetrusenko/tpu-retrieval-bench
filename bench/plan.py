@@ -33,7 +33,8 @@ def load_dataset(a: Args) -> dict[str, Any]:
     name = a.dataset
     ann = datasets.load_ann(
         Path(a.data_dir) / f"{name}.hdf5" if a.data_dir else name,
-        n_train=a.n_train, n_test=a.n_test,
+        n_train=a.n_train,
+        n_test=a.n_test,
     )
     ann["hash"] = data.data_hash(ann["train"], ann["test"])
     a.metric = ann["metric"]

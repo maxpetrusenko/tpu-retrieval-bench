@@ -14,8 +14,22 @@ def read_all(root):
 
 
 def test_stage_split_nulls_and_ratio(tmp_path):
-    run.main(["--algos", "score_only,select_only,jit_topk", "--m", "4", "--n", "2048", "--d", "16",
-              "--k", "5", "--out", str(tmp_path)])
+    run.main(
+        [
+            "--algos",
+            "score_only,select_only,jit_topk",
+            "--m",
+            "4",
+            "--n",
+            "2048",
+            "--d",
+            "16",
+            "--k",
+            "5",
+            "--out",
+            str(tmp_path),
+        ]
+    )
     recs = read_all(tmp_path)
     sel, sc, jt = recs["select_only"]["metrics"], recs["score_only"]["metrics"], recs["jit_topk"]
     assert sel["flops_achieved"] is None and sel["percent_of_peak"] is None
@@ -28,8 +42,26 @@ def test_stage_split_nulls_and_ratio(tmp_path):
 
 
 def test_prepared_index_is_untimed_and_stored_in_compute_dtype(tmp_path):
-    run.main(["--algos", "jit_topk,blockwise,pallas_score,approx_max_k", "--m", "4", "--n", "600",
-              "--d", "16", "--k", "5", "--out", str(tmp_path), "--bn", "128", "--bk", "128"])
+    run.main(
+        [
+            "--algos",
+            "jit_topk,blockwise,pallas_score,approx_max_k",
+            "--m",
+            "4",
+            "--n",
+            "600",
+            "--d",
+            "16",
+            "--k",
+            "5",
+            "--out",
+            str(tmp_path),
+            "--bn",
+            "128",
+            "--bk",
+            "128",
+        ]
+    )
     for name, r in read_all(tmp_path).items():
         mt = r["metrics"]
         assert mt["build_time_s"] > 0, name
@@ -39,9 +71,28 @@ def test_prepared_index_is_untimed_and_stored_in_compute_dtype(tmp_path):
 
 
 def test_fused_algos_record_candidate_bytes(tmp_path):
-    run.main(["--algos", "pallas_fused_topk,pallas_fused_bucket,pallas_score", "--m", "4",
-              "--n", "600", "--d", "16", "--k", "5", "--out", str(tmp_path), "--bn", "128",
-              "--bk", "128", "--dtype", "f32"])
+    run.main(
+        [
+            "--algos",
+            "pallas_fused_topk,pallas_fused_bucket,pallas_score",
+            "--m",
+            "4",
+            "--n",
+            "600",
+            "--d",
+            "16",
+            "--k",
+            "5",
+            "--out",
+            str(tmp_path),
+            "--bn",
+            "128",
+            "--bk",
+            "128",
+            "--dtype",
+            "f32",
+        ]
+    )
     recs = read_all(tmp_path)
     by = {r["algorithm"]["name"]: r for r in recs.values()}
     ft, fb, ps = (by["pallas_fused_topk"], by["pallas_fused_bucket"], by["pallas_score_topk"])
@@ -56,9 +107,28 @@ def test_fused_algos_record_candidate_bytes(tmp_path):
 
 def test_dataset_flag_with_batches(tmp_path):
     make_file(tmp_path / "sift-128-euclidean.hdf5", "euclidean", n=300, nq=6, d=16)
-    run.main(["--dataset", "sift-128-euclidean", "--data-dir", str(tmp_path), "--algos",
-              "jit_topk,blockwise", "--k", "10", "--dtype", "f32", "--n-train", "250",
-              "--n-test", "5", "--batch-size", "2", "--out", str(tmp_path / "out")])
+    run.main(
+        [
+            "--dataset",
+            "sift-128-euclidean",
+            "--data-dir",
+            str(tmp_path),
+            "--algos",
+            "jit_topk,blockwise",
+            "--k",
+            "10",
+            "--dtype",
+            "f32",
+            "--n-train",
+            "250",
+            "--n-test",
+            "5",
+            "--batch-size",
+            "2",
+            "--out",
+            str(tmp_path / "out"),
+        ]
+    )
     recs = read_all(tmp_path / "out")
     assert set(recs) == {"jit_topk", "blockwise"}
     for r in recs.values():
@@ -68,15 +138,30 @@ def test_dataset_flag_with_batches(tmp_path):
         assert r["metrics"]["recall"] == 1.0
         assert r["metrics"]["qps_best"] == pytest.approx(5 / r["metrics"]["best_search_time_s"])
         assert r["metrics"]["score_matrix_bytes"] == 4 * 2 * 250 or r["algorithm"]["name"] == (
-            "blockwise_topk")
+            "blockwise_topk"
+        )
     assert "sift-128-euclidean" in str(next((tmp_path / "out").rglob("*.json")))
 
 
 @pytest.mark.parametrize("dist", ["euclidean", "angular"])
 def test_dataset_metrics(tmp_path, dist):
     make_file(tmp_path / "glove-100-angular.hdf5", dist, n=200, nq=4, d=8)
-    run.main(["--dataset", "glove-100-angular", "--data-dir", str(tmp_path), "--algos",
-              "jit_topk", "--k", "5", "--dtype", "f32", "--out", str(tmp_path / "out")])
+    run.main(
+        [
+            "--dataset",
+            "glove-100-angular",
+            "--data-dir",
+            str(tmp_path),
+            "--algos",
+            "jit_topk",
+            "--k",
+            "5",
+            "--dtype",
+            "f32",
+            "--out",
+            str(tmp_path / "out"),
+        ]
+    )
     assert read_all(tmp_path / "out")["jit_topk"]["metrics"]["recall"] == 1.0
 
 
@@ -85,8 +170,22 @@ def test_oom_is_recorded_and_run_continues(tmp_path, monkeypatch):
         raise RuntimeError("RESOURCE_EXHAUSTED: out of memory allocating 99GB")
 
     monkeypatch.setitem(algos.FACTORIES, "jit_topk", boom)
-    run.main(["--algos", "jit_topk,blockwise", "--m", "4", "--n", "512", "--d", "16",
-              "--k", "5", "--out", str(tmp_path)])
+    run.main(
+        [
+            "--algos",
+            "jit_topk,blockwise",
+            "--m",
+            "4",
+            "--n",
+            "512",
+            "--d",
+            "16",
+            "--k",
+            "5",
+            "--out",
+            str(tmp_path),
+        ]
+    )
     recs = read_all(tmp_path)
     assert "RESOURCE_EXHAUSTED" in recs["jit_topk"]["error"]
     assert recs["blockwise"]["metrics"]["recall"] >= 0.99
@@ -98,28 +197,88 @@ def test_non_oom_errors_propagate(tmp_path, monkeypatch):
 
     monkeypatch.setitem(algos.FACTORIES, "jit_topk", boom)
     with pytest.raises(ValueError):
-        run.main(["--algos", "jit_topk", "--m", "4", "--n", "512", "--d", "16", "--k", "5",
-                  "--out", str(tmp_path)])
+        run.main(
+            [
+                "--algos",
+                "jit_topk",
+                "--m",
+                "4",
+                "--n",
+                "512",
+                "--d",
+                "16",
+                "--k",
+                "5",
+                "--out",
+                str(tmp_path),
+            ]
+        )
 
 
 def test_synthetic_recall_uses_sampled_queries_when_oracle_too_big(tmp_path, monkeypatch):
     monkeypatch.setattr(execute, "REF_LIMIT", 1)
-    run.main(["--algos", "jit_topk", "--m", "100", "--n", "512", "--d", "8", "--k", "5",
-              "--batch-size", "40", "--out", str(tmp_path)])
+    run.main(
+        [
+            "--algos",
+            "jit_topk",
+            "--m",
+            "100",
+            "--n",
+            "512",
+            "--d",
+            "8",
+            "--k",
+            "5",
+            "--batch-size",
+            "40",
+            "--out",
+            str(tmp_path),
+        ]
+    )
     mt = read_all(tmp_path)["jit_topk"]["metrics"]
     assert mt["recall_sampled_queries"] == execute.SAMPLE_QUERIES == 64
     assert mt["recall"] >= 0.99
 
 
 def test_full_oracle_when_small(tmp_path):
-    run.main(["--algos", "jit_topk", "--m", "10", "--n", "512", "--d", "8", "--k", "5",
-              "--out", str(tmp_path)])
+    run.main(
+        [
+            "--algos",
+            "jit_topk",
+            "--m",
+            "10",
+            "--n",
+            "512",
+            "--d",
+            "8",
+            "--k",
+            "5",
+            "--out",
+            str(tmp_path),
+        ]
+    )
     assert read_all(tmp_path)["jit_topk"]["metrics"]["recall_sampled_queries"] == 10
 
 
 def test_f32_compute_has_no_percent_of_peak(tmp_path):
-    run.main(["--algos", "jit_topk", "--m", "4", "--n", "256", "--d", "8", "--k", "5",
-              "--dtype", "f32", "--out", str(tmp_path)])
+    run.main(
+        [
+            "--algos",
+            "jit_topk",
+            "--m",
+            "4",
+            "--n",
+            "256",
+            "--d",
+            "8",
+            "--k",
+            "5",
+            "--dtype",
+            "f32",
+            "--out",
+            str(tmp_path),
+        ]
+    )
     mt = read_all(tmp_path)["jit_topk"]["metrics"]
     assert mt["percent_of_peak"] is None and mt["flops_peak"] is None
 
@@ -132,9 +291,18 @@ def test_sweep_blocks_dedupes_after_clamping():
 
 
 def test_exact_variants_relabelled_when_selection_dominates(tmp_path, monkeypatch):
-    monkeypatch.setattr(run.env, "hardware_info", lambda: {
-        "platform": "tpu", "device_kind": "TPU v5 lite", "n_devices": 1, "jax_version": "x",
-        "jaxlib_version": "x", "libtpu_version": None})
+    monkeypatch.setattr(
+        run.env,
+        "hardware_info",
+        lambda: {
+            "platform": "tpu",
+            "device_kind": "TPU v5 lite",
+            "n_devices": 1,
+            "jax_version": "x",
+            "jaxlib_version": "x",
+            "libtpu_version": None,
+        },
+    )
     real = timing.time_batched
     calls = iter([1.0, 1.0, 9.0])  # jit_topk, score_only, select_only
 
@@ -142,8 +310,22 @@ def test_exact_variants_relabelled_when_selection_dominates(tmp_path, monkeypatc
         return real(fn, make_args, nb, **kw) | {"times_s": [next(calls)] * 5}
 
     monkeypatch.setattr(timing, "time_batched", fake)
-    run.main(["--algos", "jit_topk,score_only,select_only", "--m", "4", "--n", "512",
-              "--d", "8", "--k", "5", "--out", str(tmp_path)])
+    run.main(
+        [
+            "--algos",
+            "jit_topk,score_only,select_only",
+            "--m",
+            "4",
+            "--n",
+            "512",
+            "--d",
+            "8",
+            "--k",
+            "5",
+            "--out",
+            str(tmp_path),
+        ]
+    )
     recs = read_all(tmp_path)
     ratio = recs["select_only"]["metrics"]["selection_over_matmul"]
     assert ratio == recs["score_only"]["metrics"]["selection_over_matmul"]
@@ -159,8 +341,12 @@ def _rec(platform, algo, n, qps, batch=16, **params):
         "dataset": {"name": "synthetic", "n_train": n, "dim": 8},
         "query": {"k": 5, "batch_size": batch},
         "algorithm": {"name": algo, "exact": True, "params": {"precision": "bf16", **params}},
-        "metrics": {"qps": qps, "recall": 1.0, "percent_of_peak": None,
-                    "latency_ms_per_batch": {"p99": 1.0}},
+        "metrics": {
+            "qps": qps,
+            "recall": 1.0,
+            "percent_of_peak": None,
+            "latency_ms_per_batch": {"p99": 1.0},
+        },
     }
 
 
@@ -197,8 +383,9 @@ def test_plot_cli_writes_one_set_per_group_and_filters(tmp_path):
     plot.main(["--results", str(tmp_path / "res"), "--out", str(tmp_path / "img")])
     names = sorted(x.name for x in (tmp_path / "img").glob("*.png"))
     assert len(names) == 6 and any("cpu" in n for n in names) and any("tpu" in n for n in names)
-    plot.main(["--results", str(tmp_path / "res"), "--out", str(tmp_path / "img2"),
-               "--platform", "tpu"])
+    plot.main(
+        ["--results", str(tmp_path / "res"), "--out", str(tmp_path / "img2"), "--platform", "tpu"]
+    )
     assert not any("cpu" in x.name for x in (tmp_path / "img2").glob("*.png"))
     assert np.all(["tpu" in x.name for x in (tmp_path / "img2").glob("*.png")])
 
@@ -207,9 +394,26 @@ def test_exact_variants_f32_dataset_recall_is_one(tmp_path):
     """Regression: exact variants on an ann HDF5 file reach recall 1.0 in f32 (full-file GT)."""
     make_file(tmp_path / "sift-128-euclidean.hdf5", "euclidean", n=3000, nq=40, d=64)
     for dt in ("f32", "bf16"):
-        run.main(["--dataset", "sift-128-euclidean", "--data-dir", str(tmp_path), "--algos",
-                  "jit_topk,blockwise,pallas_score", "--k", "10", "--dtype", dt,
-                  "--bn", "128", "--bk", "128", "--out", str(tmp_path / dt)])
+        run.main(
+            [
+                "--dataset",
+                "sift-128-euclidean",
+                "--data-dir",
+                str(tmp_path),
+                "--algos",
+                "jit_topk,blockwise,pallas_score",
+                "--k",
+                "10",
+                "--dtype",
+                dt,
+                "--bn",
+                "128",
+                "--bk",
+                "128",
+                "--out",
+                str(tmp_path / dt),
+            ]
+        )
         recs = read_all(tmp_path / dt)
         assert set(recs) == {"jit_topk", "blockwise", "pallas_score"}
         for name, r in recs.items():
@@ -227,6 +431,7 @@ ARGS = ["--algos", "jit_topk", "--m", "4", "--n", "600", "--d", "16", "--k", "5"
 def test_default_reps_20_spread_fields_and_schema(tmp_path):
     from trbench import records
     from trbench.validate import validate_record
+
     run.main([*ARGS, "--out", str(tmp_path)])
     rec = read_all(tmp_path)["jit_topk"]
     m = rec["metrics"]

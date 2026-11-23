@@ -12,8 +12,11 @@ from pathlib import Path
 
 
 def section(text: str, version: str) -> str:
-    m = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## |^\[[^\]]+\]: |\Z)", text,
-                  re.MULTILINE | re.DOTALL)
+    m = re.search(
+        rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## |^\[[^\]]+\]: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
     return m.group(1).strip() if m else ""
 
 

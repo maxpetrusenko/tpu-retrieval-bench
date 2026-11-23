@@ -18,10 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _rec(m, qps, ci=None, algo="jit_matmul_topk", n=1000, params=None):
     ci = ci or [qps * 0.99, qps * 1.01]
-    return {"dataset": {"name": "synthetic", "n_train": n, "dim": 8},
-            "query": {"k": 10, "batch_size": m},
-            "algorithm": {"name": algo, "params": params or {}},
-            "metrics": {"qps": qps, "qps_ci95": ci}}
+    return {
+        "dataset": {"name": "synthetic", "n_train": n, "dim": 8},
+        "query": {"k": 10, "batch_size": m},
+        "algorithm": {"name": algo, "params": params or {}},
+        "metrics": {"qps": qps, "qps_ci95": ci},
+    }
 
 
 def _put(root: Path, name: str, rec) -> None:
@@ -38,7 +40,13 @@ def test_percentile_linear_interpolation():
 
 def test_size_class_boundaries():
     assert [size_class(m) for m in (1, 16, 17, 127, 128, 1024)] == [
-        "small", "small", "mid", "mid", "large", "large"]
+        "small",
+        "small",
+        "mid",
+        "mid",
+        "large",
+        "large",
+    ]
 
 
 def test_overlaps_touching_counts():
@@ -102,10 +110,22 @@ def test_missing_ci_is_an_error(tmp_path):
 
 def _claim_tree(root: Path, jit: float, v4: float, v4_ci_halfwidth: float = 0.01) -> None:
     _put(root, "jit.json", _rec(1024, jit))
-    _put(root, "v4.json", _rec(1024, v4, [v4 * (1 - v4_ci_halfwidth), v4 * (1 + v4_ci_halfwidth)],
-                               algo="pallas_fused_topk", params={"bm": 256, "bn": 512}))
-    _put(root, "v4_sweep.json", _rec(1024, v4 * 1.2, algo="pallas_fused_topk",
-                                     params={"bm": 256, "bn": 1024}))
+    _put(
+        root,
+        "v4.json",
+        _rec(
+            1024,
+            v4,
+            [v4 * (1 - v4_ci_halfwidth), v4 * (1 + v4_ci_halfwidth)],
+            algo="pallas_fused_topk",
+            params={"bm": 256, "bn": 512},
+        ),
+    )
+    _put(
+        root,
+        "v4_sweep.json",
+        _rec(1024, v4 * 1.2, algo="pallas_fused_topk", params={"bm": 256, "bn": 1024}),
+    )
 
 
 def _verdicts(tmp_path, a_args, b_args):

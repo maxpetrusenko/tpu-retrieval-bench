@@ -13,8 +13,15 @@ pytestmark = pytest.mark.skipif(bash is None, reason="needs bash")
 
 def dry(*args, env=None):
     import os
-    return subprocess.run([bash, str(SCRIPT), *args], capture_output=True, text=True, cwd=ROOT,
-                          check=False, env={**os.environ, "DRY_RUN": "1", **(env or {})})
+
+    return subprocess.run(
+        [bash, str(SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=False,
+        env={**os.environ, "DRY_RUN": "1", **(env or {})},
+    )
 
 
 def test_script_syntax():
@@ -48,9 +55,16 @@ def test_allow_dirty_passthrough(tmp_path):
 
 def test_refuses_non_empty_out(tmp_path):
     import os
+
     (tmp_path / "x.json").write_text("{}")
-    r = subprocess.run([bash, str(SCRIPT), str(tmp_path)], capture_output=True, text=True,
-                       check=False, cwd=ROOT, env={k: v for k, v in os.environ.items() if k != "DRY_RUN"})
+    r = subprocess.run(
+        [bash, str(SCRIPT), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=ROOT,
+        env={k: v for k, v in os.environ.items() if k != "DRY_RUN"},
+    )
     assert r.returncode == 1 and "refusing" in r.stderr
 
 
@@ -66,8 +80,14 @@ def test_notebook_uses_single_entry_point_and_keeps_tpu_lock():
 
 def _first_cmd(env):
     """First command line a dry run prints, with PATH limited to the given directory."""
-    r = subprocess.run([bash, str(SCRIPT), "/nonexistent/out"], capture_output=True, text=True,
-                       cwd=ROOT, check=False, env={"DRY_RUN": "1", **env})
+    r = subprocess.run(
+        [bash, str(SCRIPT), "/nonexistent/out"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=False,
+        env={"DRY_RUN": "1", **env},
+    )
     assert r.returncode == 0, r.stderr
     return next(ln for ln in r.stdout.splitlines() if ln.startswith("+ "))
 
@@ -87,16 +107,21 @@ def _path_with(tmp_path, *tools):
 
 def test_interpreter_prefers_PYTHON_env(tmp_path):
     path = _path_with(tmp_path, "uv", "python3")
-    assert _first_cmd({"PATH": path, "PYTHON": "mypy-python"}).startswith("+ mypy-python -m bench.run")
+    assert _first_cmd({"PATH": path, "PYTHON": "mypy-python"}).startswith(
+        "+ mypy-python -m bench.run"
+    )
 
 
 def test_interpreter_uses_uv_run_when_available(tmp_path):
     assert _first_cmd({"PATH": _path_with(tmp_path, "uv", "python3")}).startswith(
-        "+ uv run python -m bench.run")
+        "+ uv run python -m bench.run"
+    )
 
 
 def test_interpreter_falls_back_to_python3_then_python(tmp_path):
-    assert _first_cmd({"PATH": _path_with(tmp_path, "python3")}).startswith("+ python3 -m bench.run")
+    assert _first_cmd({"PATH": _path_with(tmp_path, "python3")}).startswith(
+        "+ python3 -m bench.run"
+    )
     other = tmp_path / "other"
     other.mkdir()
     assert _first_cmd({"PATH": _path_with(other)}).startswith("+ python -m bench.run")

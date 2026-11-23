@@ -17,8 +17,7 @@ M, N, D = 8, 1000, 100
 def test_f32_exact_ids(metric, use_mask, k, block):
     q, e, mask = data.synthetic(M, N, D, seed=1, mask_frac=0.3 if use_mask else 0.0)
     rs, ri = numpy_ref(q, e, k, metric=metric, mask=mask)
-    s, i = blockwise(q, e, k, metric=metric, mask=mask, compute_dtype=jnp.float32,
-                     block_size=block)
+    s, i = blockwise(q, e, k, metric=metric, mask=mask, compute_dtype=jnp.float32, block_size=block)
     np.testing.assert_array_equal(np.asarray(i), ri)
     np.testing.assert_allclose(np.asarray(s), rs, rtol=1e-4, atol=1e-4)
 
@@ -41,8 +40,11 @@ def test_stage_split_matches():
     q, e, mask = data.synthetic(M, N, D, seed=3, mask_frac=0.2)
     sc = make_score_only(metric="l2", compute_dtype=jnp.float32, has_mask=True)(q, e, mask)
     np.testing.assert_allclose(
-        np.asarray(sc), scores_ref(q, e, metric="l2", mask=mask).astype(np.float32),
-        rtol=1e-4, atol=1e-3)
+        np.asarray(sc),
+        scores_ref(q, e, metric="l2", mask=mask).astype(np.float32),
+        rtol=1e-4,
+        atol=1e-3,
+    )
     _, i = make_select_only(10)(sc)
     _, ri = numpy_ref(q, e, 10, metric="l2", mask=mask)
     np.testing.assert_array_equal(np.asarray(i), ri)

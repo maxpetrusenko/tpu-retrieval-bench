@@ -8,8 +8,9 @@ from _topk_check import VARIANTS, check_matches_ref, check_structure, full_score
 from trbench import data
 from trbench.reference import numpy_ref
 
-SETTINGS = settings(max_examples=50, deadline=None,
-                    suppress_health_check=[HealthCheck.too_slow], derandomize=True)
+SETTINGS = settings(
+    max_examples=50, deadline=None, suppress_health_check=[HealthCheck.too_slow], derandomize=True
+)
 
 
 @st.composite

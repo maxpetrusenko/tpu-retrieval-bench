@@ -39,9 +39,14 @@ BOOT_SEED = 0
 BOOT_ALPHA = 0.05
 
 
-def bootstrap_ci(values: npt.ArrayLike, stat: Callable[..., Any] = np.median, *,
-                 n_boot: int = BOOT_RESAMPLES, seed: int = BOOT_SEED,
-                 alpha: float = BOOT_ALPHA) -> tuple[float, float]:
+def bootstrap_ci(
+    values: npt.ArrayLike,
+    stat: Callable[..., Any] = np.median,
+    *,
+    n_boot: int = BOOT_RESAMPLES,
+    seed: int = BOOT_SEED,
+    alpha: float = BOOT_ALPHA,
+) -> tuple[float, float]:
     """Percentile bootstrap CI of stat(values). stat takes (array, axis=1), e.g. np.median.
 
     Deterministic: fixed seed, numpy only."""
@@ -79,8 +84,7 @@ def median_qps(times_s: Times, n_queries: int) -> float:
     return float(np.median(pass_qps(times_s, n_queries)))
 
 
-def spread_metrics(times_s: Times, n_queries: int,
-                   latency_ms: dict[str, Any]) -> dict[str, Any]:
+def spread_metrics(times_s: Times, n_queries: int, latency_ms: dict[str, Any]) -> dict[str, Any]:
     """Spread fields for a record. times_s = per-pass wall times (s) of n_queries queries.
 
     QPS spread is over per-pass QPS = n_queries / time. `qps_median` is the headline `qps` and
@@ -97,23 +101,31 @@ def spread_metrics(times_s: Times, n_queries: int,
         "qps_median": median_qps(times_s, n_queries),
         "qps_stdev": float(qps.std(ddof=1)) if qps.size > 1 else 0.0,
         "qps_ci95": [lo, hi],
-        "bootstrap": {"statistic": "median", "n_resamples": BOOT_RESAMPLES, "seed": BOOT_SEED,
-                      "level": 1 - BOOT_ALPHA},
+        "bootstrap": {
+            "statistic": "median",
+            "n_resamples": BOOT_RESAMPLES,
+            "seed": BOOT_SEED,
+            "level": 1 - BOOT_ALPHA,
+        },
     }
 
 
-def time_fn(fn: JitFn, *args: Any, warmup: int = 3,
-            repetitions: int = DEFAULT_REPS) -> dict[str, Any]:
+def time_fn(
+    fn: JitFn, *args: Any, warmup: int = 3, repetitions: int = DEFAULT_REPS
+) -> dict[str, Any]:
     """Return dict: compile_time_s, times_s (list), latency_ms (min/p50/p95/p99/mean), compiled."""
     if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
     compiled, compile_s = compile_aot(fn, *args)
-    return {"compile_time_s": compile_s, **time_compiled(compiled, *args, warmup=warmup,
-                                                         repetitions=repetitions)}
+    return {
+        "compile_time_s": compile_s,
+        **time_compiled(compiled, *args, warmup=warmup, repetitions=repetitions),
+    }
 
 
-def time_compiled(compiled: JitFn, *args: Any, warmup: int = 3,
-                  repetitions: int = DEFAULT_REPS) -> dict[str, Any]:
+def time_compiled(
+    compiled: JitFn, *args: Any, warmup: int = 3, repetitions: int = DEFAULT_REPS
+) -> dict[str, Any]:
     """Warm + time an already compiled fn. Returns times_s, latency_ms, compiled."""
     for _ in range(warmup):
         block_until_ready(compiled(*args))
@@ -134,8 +146,15 @@ def _shape_key(args: Any) -> tuple[tuple[int, ...], ...]:
     return tuple(tuple(x.shape) for x in jax.tree_util.tree_leaves(args))
 
 
-def time_batched(fn: JitFn, make_args: MakeArgs, n_batches: int, *, warmup: int = 3,
-                 repetitions: int = DEFAULT_REPS, keep_out: bool = True) -> dict[str, Any]:
+def time_batched(
+    fn: JitFn,
+    make_args: MakeArgs,
+    n_batches: int,
+    *,
+    warmup: int = 3,
+    repetitions: int = DEFAULT_REPS,
+    keep_out: bool = True,
+) -> dict[str, Any]:
     """Time a full pass over n_batches query batches, `repetitions` times.
 
     make_args(i) builds the args for batch i untimed (its device work is synchronized before the
@@ -217,8 +236,9 @@ def make_loop_fn(fn: JitFn, inner: int) -> JitFn:
     return jax.jit(run)
 
 
-def time_loop(fn: JitFn, *args: Any, inner: int = 16, warmup: int = 3,
-              repetitions: int = DEFAULT_REPS) -> dict[str, Any]:
+def time_loop(
+    fn: JitFn, *args: Any, inner: int = 16, warmup: int = 3, repetitions: int = DEFAULT_REPS
+) -> dict[str, Any]:
     """Per-iteration device-amortized time: each rep is one dispatch of `inner` iterations.
 
     times_s[r] = wall time of rep r / inner. Returns compile_time_s, times_s, latency_ms, inner.
@@ -228,12 +248,23 @@ def time_loop(fn: JitFn, *args: Any, inner: int = 16, warmup: int = 3,
     compiled, compile_s = compile_aot(make_loop_fn(fn, inner), *args)
     res = time_compiled(compiled, *args, warmup=warmup, repetitions=repetitions)
     times = [t / inner for t in res["times_s"]]
-    return {"compile_time_s": compile_s, "times_s": times, "latency_ms": summarize(times),
-            "inner": inner}
+    return {
+        "compile_time_s": compile_s,
+        "times_s": times,
+        "latency_ms": summarize(times),
+        "inner": inner,
+    }
 
 
-def time_batched_loop(fn: JitFn, make_args: MakeArgs, n_batches: int, *, inner: int = 16,
-                      warmup: int = 3, repetitions: int = DEFAULT_REPS) -> dict[str, Any]:
+def time_batched_loop(
+    fn: JitFn,
+    make_args: MakeArgs,
+    n_batches: int,
+    *,
+    inner: int = 16,
+    warmup: int = 3,
+    repetitions: int = DEFAULT_REPS,
+) -> dict[str, Any]:
     """Loop-mode twin of time_batched: times_s[r] = sum over batches of per-iteration time."""
     if warmup < 3 or repetitions < MIN_REPS:
         raise ValueError("need warmup >= 3 and repetitions >= 5")
@@ -260,15 +291,20 @@ def time_batched_loop(fn: JitFn, make_args: MakeArgs, n_batches: int, *, inner: 
             total += dt
             batch_times.append(dt)
         passes.append(total)
-    return {"compile_time_s": compile_s, "times_s": passes, "latency_ms": summarize(batch_times),
-            "inner": inner}
+    return {
+        "compile_time_s": compile_s,
+        "times_s": passes,
+        "latency_ms": summarize(batch_times),
+        "inner": inner,
+    }
 
 
 # ---- batch-1 serial latency (VectorDBBench serial_latency_*) -----------------------------------
 
 
-def time_serial(fn: JitFn, make_args: MakeArgs, n_queries: int, *,
-                warmup: int = 3) -> dict[str, Any]:
+def time_serial(
+    fn: JitFn, make_args: MakeArgs, n_queries: int, *, warmup: int = 3
+) -> dict[str, Any]:
     """One query at a time, concurrency 1: n_queries timed calls, each ended by block_until_ready.
 
     make_args(i) builds the args for query i (i = 0..n_queries-1; the caller may cycle its query
@@ -322,8 +358,11 @@ def device_time(fn: JitFn, *args: Any, calls: int = 5) -> dict[str, Any]:
     try:
         from jax.profiler import ProfileData
     except ImportError:
-        return {"device_time_ms": None, "device_time_source": None,
-                "device_time_note": "jax.profiler.ProfileData unavailable in this jax"}
+        return {
+            "device_time_ms": None,
+            "device_time_source": None,
+            "device_time_note": "jax.profiler.ProfileData unavailable in this jax",
+        }
     block_until_ready(fn(*args))  # warm outside the trace
     with tempfile.TemporaryDirectory() as d:
         with jax.profiler.trace(d):
@@ -331,12 +370,21 @@ def device_time(fn: JitFn, *args: Any, calls: int = 5) -> dict[str, Any]:
                 block_until_ready(fn(*args))
         files = glob.glob(f"{d}/**/*.xplane.pb", recursive=True)
         if not files:
-            return {"device_time_ms": None, "device_time_source": None,
-                    "device_time_note": "profiler wrote no xplane.pb"}
+            return {
+                "device_time_ms": None,
+                "device_time_source": None,
+                "device_time_note": "profiler wrote no xplane.pb",
+            }
         total_ms, n_events = device_time_from_profile(ProfileData.from_file(files[0]))
     if total_ms is None:
-        return {"device_time_ms": None, "device_time_source": None,
-                "device_time_note": f"no /device: plane with '{DEVICE_LINE}' events "
-                                    f"(platform {jax.default_backend()})"}
-    return {"device_time_ms": total_ms / calls, "device_time_source": "xplane_xla_modules",
-            "device_time_note": f"{n_events} module events over {calls} calls"}
+        return {
+            "device_time_ms": None,
+            "device_time_source": None,
+            "device_time_note": f"no /device: plane with '{DEVICE_LINE}' events "
+            f"(platform {jax.default_backend()})",
+        }
+    return {
+        "device_time_ms": total_ms / calls,
+        "device_time_source": "xplane_xla_modules",
+        "device_time_note": f"{n_events} module events over {calls} calls",
+    }

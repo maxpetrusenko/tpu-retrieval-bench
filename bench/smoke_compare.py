@@ -60,8 +60,9 @@ def compare(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--smoke", required=True, type=Path)
     ap.add_argument("--ref", required=True, type=Path)
     ap.add_argument("--algos", required=True, help="comma list of algorithm directory names")

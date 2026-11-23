@@ -12,8 +12,12 @@ def _rec(dirty):
 
 
 def _tree(tmp_path):
-    for rel, dirty in [("a/x.json", True), ("a/y/z.json", False), ("b/w.json", False),
-                       ("top.json", True)]:
+    for rel, dirty in [
+        ("a/x.json", True),
+        ("a/y/z.json", False),
+        ("b/w.json", False),
+        ("top.json", True),
+    ]:
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(_rec(dirty))
@@ -25,8 +29,11 @@ def _tree(tmp_path):
 def test_collect_counts(tmp_path):
     s = doc_stats.collect(_tree(tmp_path))
     assert s["records"] == 4 and s["dirty"] == 2 and s["other_json"] == 2
-    assert s["groups"] == {"a": {"records": 2, "dirty": 1}, "b": {"records": 1, "dirty": 0},
-                           ".": {"records": 1, "dirty": 1}}
+    assert s["groups"] == {
+        "a": {"records": 2, "dirty": 1},
+        "b": {"records": 1, "dirty": 0},
+        ".": {"records": 1, "dirty": 1},
+    }
 
 
 def test_render_and_splice_roundtrip(tmp_path):

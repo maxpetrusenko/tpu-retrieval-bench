@@ -36,9 +36,18 @@ def repo_git_info(a: Args) -> dict[str, Any]:
     return env.git_info(repo, ignore=ignore)
 
 
-def run_one(algo: str, m: int, n: int, d: int, k: int, a: Args, hw: dict[str, Any],
-            git: dict[str, Any], bp: BlockParams | None = None,
-            ann: dict[str, Any] | None = None) -> tuple[Path, Record]:
+def run_one(
+    algo: str,
+    m: int,
+    n: int,
+    d: int,
+    k: int,
+    a: Args,
+    hw: dict[str, Any],
+    git: dict[str, Any],
+    bp: BlockParams | None = None,
+    ann: dict[str, Any] | None = None,
+) -> tuple[Path, Record]:
     """Measure one job, write its record (and HLO with --dump-hlo); return (path, record)."""
     meas = execute.measure(algo, m, n, d, k, a, bp, ann)
     rec = emit.build_run_record(meas, a, hw, git)
@@ -54,9 +63,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     a = parse(argv)
     git = repo_git_info(a)
     if git["dirty"] and not a.allow_dirty:
-        raise SystemExit("refusing to run: git tree is dirty (uncommitted changes outside the "
-                         "output dir), so records would not match the commit. Commit or stash, "
-                         "or pass --allow-dirty (records git.dirty=true).")
+        raise SystemExit(
+            "refusing to run: git tree is dirty (uncommitted changes outside the "
+            "output dir), so records would not match the commit. Commit or stash, "
+            "or pass --allow-dirty (records git.dirty=true)."
+        )
     hw = env.hardware_info()
     ann = plan.load_dataset(a) if a.dataset != "synthetic" else None
     stage: dict[tuple[int, ...], dict[str, tuple[Path, Record]]] = {}

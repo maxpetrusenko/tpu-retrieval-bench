@@ -34,8 +34,9 @@ class BlockIndex(NamedTuple):
     vb: Array  # (nb, B) bool; padded and masked rows False
 
 
-def prepare_blockwise(db: Array, mask: Array | None, *, metric: str, compute_dtype: DTypeLike,
-                      block_size: int) -> BlockIndex:
+def prepare_blockwise(
+    db: Array, mask: Array | None, *, metric: str, compute_dtype: DTypeLike, block_size: int
+) -> BlockIndex:
     n = db.shape[0]
     b = min(block_size, n)
     nb = -(-n // b)
@@ -56,8 +57,9 @@ def prepare_blockwise(db: Array, mask: Array | None, *, metric: str, compute_dty
     )
 
 
-def search_blockwise(queries: Array, idx: BlockIndex, *, k: int, metric: str,
-                     compute_dtype: DTypeLike) -> tuple[Array, Array]:
+def search_blockwise(
+    queries: Array, idx: BlockIndex, *, k: int, metric: str, compute_dtype: DTypeLike
+) -> tuple[Array, Array]:
     m = queries.shape[0]
     nb, b = idx.vb.shape
     q = queries.astype(jnp.float32)
@@ -66,8 +68,9 @@ def search_blockwise(queries: Array, idx: BlockIndex, *, k: int, metric: str,
     qc = q.astype(compute_dtype)
     esq = idx.esq if idx.esq is not None else jnp.zeros((nb, b), jnp.float32)
 
-    def step(carry: tuple[Array, Array],
-             xs: tuple[Array, Array, Array, Array]) -> tuple[tuple[Array, Array], None]:
+    def step(
+        carry: tuple[Array, Array], xs: tuple[Array, Array, Array, Array]
+    ) -> tuple[tuple[Array, Array], None]:
         run_v, run_i = carry
         e_blk, esq_blk, v_blk, off = xs
         s = jnp.matmul(qc, e_blk.T, preferred_element_type=jnp.float32)
@@ -82,9 +85,14 @@ def search_blockwise(queries: Array, idx: BlockIndex, *, k: int, metric: str,
     return vals, ids
 
 
-def make_blockwise_parts(k: int, *, metric: str = "ip", compute_dtype: DTypeLike = jnp.bfloat16,
-                         has_mask: bool = False,
-                         block_size: int = DEFAULT_BLOCK) -> tuple[JitFn, JitFn]:
+def make_blockwise_parts(
+    k: int,
+    *,
+    metric: str = "ip",
+    compute_dtype: DTypeLike = jnp.bfloat16,
+    has_mask: bool = False,
+    block_size: int = DEFAULT_BLOCK,
+) -> tuple[JitFn, JitFn]:
     kw: dict[str, Any] = {"metric": metric, "compute_dtype": compute_dtype}
     pk: dict[str, Any] = {**kw, "block_size": block_size}
     if has_mask:
@@ -94,36 +102,58 @@ def make_blockwise_parts(k: int, *, metric: str = "ip", compute_dtype: DTypeLike
     return prep_fn, jax.jit(lambda q, idx: search_blockwise(q, idx, k=k, **kw))
 
 
-def make_blockwise(k: int, *, metric: str = "ip", compute_dtype: DTypeLike = jnp.bfloat16,
-                   has_mask: bool = False, block_size: int = DEFAULT_BLOCK) -> JitFn:
+def make_blockwise(
+    k: int,
+    *,
+    metric: str = "ip",
+    compute_dtype: DTypeLike = jnp.bfloat16,
+    has_mask: bool = False,
+    block_size: int = DEFAULT_BLOCK,
+) -> JitFn:
     kw: dict[str, Any] = {"metric": metric, "compute_dtype": compute_dtype}
     pk: dict[str, Any] = {**kw, "block_size": block_size}
     if has_mask:
-        return jax.jit(lambda q, e, mk: search_blockwise(
-            q, prepare_blockwise(e, mk, **pk), k=k, **kw))
-    return jax.jit(lambda q, e: search_blockwise(
-        q, prepare_blockwise(e, None, **pk), k=k, **kw))
+        return jax.jit(
+            lambda q, e, mk: search_blockwise(q, prepare_blockwise(e, mk, **pk), k=k, **kw)
+        )
+    return jax.jit(lambda q, e: search_blockwise(q, prepare_blockwise(e, None, **pk), k=k, **kw))
 
 
-def blockwise(queries: Array, db: Array, k: int, *, metric: str = "ip",
-              mask: Array | None = None, compute_dtype: DTypeLike = jnp.bfloat16,
-              block_size: int = DEFAULT_BLOCK) -> tuple[Array, Array]:
-    f = make_blockwise(k, metric=metric, compute_dtype=compute_dtype,
-                       has_mask=mask is not None, block_size=block_size)
+def blockwise(
+    queries: Array,
+    db: Array,
+    k: int,
+    *,
+    metric: str = "ip",
+    mask: Array | None = None,
+    compute_dtype: DTypeLike = jnp.bfloat16,
+    block_size: int = DEFAULT_BLOCK,
+) -> tuple[Array, Array]:
+    f = make_blockwise(
+        k,
+        metric=metric,
+        compute_dtype=compute_dtype,
+        has_mask=mask is not None,
+        block_size=block_size,
+    )
     out: tuple[Array, Array] = f(queries, db) if mask is None else f(queries, db, mask)
     return out
 
 
-def make_score_only_parts(*, metric: str = "ip",
-                          compute_dtype: DTypeLike = jnp.bfloat16) -> tuple[JitFn, JitFn]:
+def make_score_only_parts(
+    *, metric: str = "ip", compute_dtype: DTypeLike = jnp.bfloat16
+) -> tuple[JitFn, JitFn]:
     """(prepare(db) -> DenseIndex, score(queries, index) -> (M, N) f32)."""
     kw: dict[str, Any] = {"metric": metric, "compute_dtype": compute_dtype}
-    return (jax.jit(lambda e: prepare_dense(e, None, **kw)),
-            jax.jit(lambda q, idx: dense_scores(q, idx, **kw)))
+    return (
+        jax.jit(lambda e: prepare_dense(e, None, **kw)),
+        jax.jit(lambda q, idx: dense_scores(q, idx, **kw)),
+    )
 
 
-def make_score_only(*, metric: str = "ip", compute_dtype: DTypeLike = jnp.bfloat16,
-                    has_mask: bool = False) -> JitFn:
+def make_score_only(
+    *, metric: str = "ip", compute_dtype: DTypeLike = jnp.bfloat16, has_mask: bool = False
+) -> JitFn:
     """Scoring stage of V1 alone: (queries, db[, mask]) -> full (M, N) f32 scores."""
     kw: dict[str, Any] = {"metric": metric, "compute_dtype": compute_dtype}
     if has_mask:
@@ -133,7 +163,9 @@ def make_score_only(*, metric: str = "ip", compute_dtype: DTypeLike = jnp.bfloat
 
 def make_select_only(k: int) -> JitFn:
     """Selection stage alone: precomputed (M, N) scores -> (vals, ids)."""
+
     def f(scores: Array) -> tuple[Array, Array]:
         v, i = lax.top_k(scores, k)
         return v, i.astype(jnp.int32)
+
     return jax.jit(f)
