@@ -34,14 +34,17 @@ BASELINE = "jit_matmul_topk"
 FAST_P = (1.0, 1.25)
 SUSPECT_SPEEDUP = 10.0
 
+Rec = dict[str, Any]
+ShapeKey = tuple[Any, ...]
 
-def fmt(x, nd=2):
+
+def fmt(x: Any, nd: int = 2) -> str:
     if x is None:
         return "-"
     return f"{x:.{nd}f}" if isinstance(x, float) else str(x)
 
 
-def shape_key(r):
+def shape_key(r: Rec) -> ShapeKey:
     ds, q = r["dataset"], r["query"]
     return (
         r["hardware"]["platform"],
@@ -53,15 +56,15 @@ def shape_key(r):
     )
 
 
-def ci_overlap(a, b):
+def ci_overlap(a: Rec, b: Rec) -> bool | None:
     """True/False when both records carry qps_ci95 (overlap test); None when either lacks it."""
     ca, cb = a["metrics"].get("qps_ci95"), b["metrics"].get("qps_ci95")
     if not ca or not cb:
         return None
-    return ca[0] <= cb[1] and cb[0] <= ca[1]
+    return bool(ca[0] <= cb[1] and cb[0] <= ca[1])
 
 
-def noise_flag(r, base, basis=None):
+def noise_flag(r: Rec, base: Rec, basis: str | None = None) -> str:
     """ "mixed basis" when the pair is compared on the best pass because schemas differ, else the
     CI overlap verdict ("within noise", "" or "no CI" when a record lacks CIs)."""
     if basis is None:
@@ -72,7 +75,7 @@ def noise_flag(r, base, basis=None):
     return "no CI" if ov is None else ("within noise" if ov else "")
 
 
-def vs_baseline(r, base, basis=None):
+def vs_baseline(r: Rec, base: Rec | None, basis: str | None = None) -> str:
     """Cell for the 'vs jit_topk' column: speedup plus noise flag; '-' for the baseline."""
     if base is None or r is base or r["algorithm"]["name"] == BASELINE:
         return "-"
@@ -82,7 +85,7 @@ def vs_baseline(r, base, basis=None):
     return f"{x:.2f}x" + (f" ({flag})" if flag else "")
 
 
-def basis_note(recs):
+def basis_note(recs: list[Rec]) -> str:
     """One-line statement of the statistic behind a table's QPS column."""
     kinds = {qps_basis(r) for r in recs}
     if kinds == {"median"}:
@@ -92,7 +95,7 @@ def basis_note(recs):
     return "QPS = best pass; table mixes schema 0.1 (best only) and 0.2, median not comparable"
 
 
-def row(r, base=None, basis=None):
+def row(r: Rec, base: Rec | None = None, basis: str | None = None) -> list[str]:
     m, a = r["metrics"], r["algorithm"]
     lat = m["latency_ms_per_batch"]
     p = a["params"]
@@ -131,13 +134,13 @@ HEAD = [
 ]
 
 
-def md_table(head, rows):
+def md_table(head: list[str], rows: list[list[str]]) -> str:
     out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     out += ["| " + " | ".join(r) + " |" for r in rows]
     return "\n".join(out)
 
 
-def best_per_algo(recs, basis=None):
+def best_per_algo(recs: list[Rec], basis: str | None = None) -> list[Rec]:
     basis = basis or comparison_basis(recs)
     best: dict[tuple[Any, ...], dict[str, Any]] = {}
     for r in recs:
@@ -151,12 +154,12 @@ def best_per_algo(recs, basis=None):
     )
 
 
-def shape_title(k):
+def shape_title(k: tuple[Any, ...]) -> str:
     plat, ds, n, d, kk, m = k
     return f"{plat} / {ds} / N={n} D={d} k={kk} M={m}"
 
 
-def main_tables(recs):
+def main_tables(recs: list[Rec]) -> str:
     by = defaultdict(list)
     for r in recs:
         by[shape_key(r)].append(r)
@@ -170,7 +173,7 @@ def main_tables(recs):
     return "\n".join(parts)
 
 
-def block_table(recs):
+def block_table(recs: list[Rec]) -> str:
     by = defaultdict(list)
     for r in recs:
         if r["algorithm"]["name"] in BLOCK_ALGOS:
@@ -181,7 +184,7 @@ def block_table(recs):
         rs = sorted(by[k], key=lambda r: qps_on(r, basis))
         lo, hi = rs[0], rs[-1]
 
-        def cfg(r):
+        def cfg(r: Rec) -> str:
             p = r["algorithm"]["params"]
             return f"{p.get('bm')}x{p.get('bn')}x{p.get('bk')}"
 
@@ -213,7 +216,7 @@ def block_table(recs):
     return md_table(head, rows) if rows else "no pallas records"
 
 
-def is_correct(r):
+def is_correct(r: Rec) -> bool:
     """Exact variant with full recall (eps 0.01 when recorded: bf16 perturbs eps 1e-3)."""
     m = r["metrics"]
     rec = m.get("recall_epsilon_0.01")
@@ -221,7 +224,7 @@ def is_correct(r):
     return bool(r["algorithm"].get("exact")) and rec is not None and rec >= EXACT_RECALL_FLOOR
 
 
-def speedups(recs):
+def speedups(recs: list[Rec]) -> list[tuple[str, ShapeKey, bool, float, str]]:
     """[(algo name, shape key, correct, speedup, noise flag)] over jit_topk, best QPS per
     algo+shape, compared on the shape's common QPS basis. Flag: "within noise" (CIs overlap),
     "no CI" (a record lacks CIs), "mixed basis" (0.1 vs 0.2, compared on best pass) or ""."""
@@ -257,7 +260,7 @@ def speedups(recs):
     return out
 
 
-def fast_p_table(recs):
+def fast_p_table(recs: list[Rec]) -> str:
     """fast_p per exact variant: fraction of shapes correct and faster than jit_topk by > p."""
     sp = speedups(recs)
     names = sorted({n for n, *_ in sp})
@@ -270,7 +273,7 @@ def fast_p_table(recs):
     return md_table(head, rows) if rows else f"no exact variants with a {BASELINE} baseline"
 
 
-def suspect_speedups(recs):
+def suspect_speedups(recs: list[Rec]) -> list[str]:
     return [
         f"exact variant speedup {x:.1f}x > {SUSPECT_SPEEDUP:g}x over jit_topk, review by hand: "
         f"{n} {shape_title(k)}"
@@ -279,7 +282,7 @@ def suspect_speedups(recs):
     ]
 
 
-def anomalies(recs):
+def anomalies(recs: list[Rec]) -> list[str]:
     out = []
     for r in recs:
         a, m = r["algorithm"], r["metrics"]
@@ -294,7 +297,7 @@ def anomalies(recs):
     return out + suspect_speedups(recs)
 
 
-def render(recs):
+def render(recs: list[Rec]) -> str:
     notes = anomalies(recs)
     return (
         "\n".join(
@@ -313,7 +316,7 @@ def render(recs):
     )
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--results", default="results")
     p.add_argument("--platform", default=None)

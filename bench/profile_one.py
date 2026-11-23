@@ -15,7 +15,7 @@ import numpy as np
 from trbench.jit_topk import make_jit_topk
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     for name, default in (("m", 128), ("n", 1_000_000), ("d", 128), ("k", 10), ("seed", 0)):
         p.add_argument(f"--{name}", type=int, default=default)
@@ -26,9 +26,9 @@ def main(argv=None):
     q = jnp.asarray(rng.standard_normal((a.m, a.d), dtype=np.float32))
     e = jnp.asarray(rng.standard_normal((a.n, a.d), dtype=np.float32))
     f = make_jit_topk(a.k)
-    jax.block_until_ready(f(q, e))  # warm
+    jax.block_until_ready(f(q, e))  # type: ignore[no-untyped-call]  # jax is untyped here
     with jax.profiler.trace(out):
-        jax.block_until_ready(f(q, e))
+        jax.block_until_ready(f(q, e))  # type: ignore[no-untyped-call]  # jax is untyped here
     print("trace written to", out)
 
 

@@ -12,7 +12,7 @@ import sys
 from trbench.validate import is_dirty, iter_records, validate_tree
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("paths", nargs="*", default=["results"], help="files or directories")
     ap.add_argument(

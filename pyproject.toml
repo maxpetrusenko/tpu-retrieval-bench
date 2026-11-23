@@ -82,25 +82,6 @@ files = ["src/trbench", "bench"]
 warn_unused_configs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
-# bench/ (scripts and drivers) is checked with check_untyped_defs; src/trbench is strict (the
-# override below spells out the strict flags, which mypy does not accept as a per-module group).
-check_untyped_defs = true
-
-[[tool.mypy.overrides]]
-# the split run driver is fully annotated; the older scripts in bench/ are not (yet)
-module = ["bench.run", "bench.cli", "bench.algos", "bench.plan", "bench.execute", "bench.emit"]
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-
-[[tool.mypy.overrides]]
-module = ["trbench", "trbench.*"]
-disallow_any_generics = true
-disallow_subclassing_any = true
-disallow_untyped_calls = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-disallow_untyped_decorators = true
-warn_return_any = true
-no_implicit_reexport = true
-strict_equality = true
-extra_checks = true
+# bench/ and src/trbench are both checked under mypy strict. Targeted ignores exist only where
+# the pinned jax ships untyped functions; each carries a comment naming the reason.
+strict = true

@@ -15,6 +15,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from trbench.validate import is_dirty
 
@@ -23,14 +24,14 @@ END = "<!-- doc_stats:end -->"
 DEFAULT_ROOT = "results/tpu"
 
 
-def collect(root) -> dict:
+def collect(root: str | Path) -> dict[str, Any]:
     """Count records under root: {group: {"records", "dirty"}} plus totals.
 
     group = first path component under root (a record directly in root groups as ".").
     A record is a JSON object with "metrics" and "git"; other JSON counts as "other".
     """
     root = Path(root)
-    groups: dict[str, Counter] = {}
+    groups: dict[str, Counter[str]] = {}
     other = 0
     for path in sorted(root.rglob("*.json")):
         try:
@@ -55,7 +56,7 @@ def collect(root) -> dict:
     }
 
 
-def render(stats, root=DEFAULT_ROOT) -> str:
+def render(stats: dict[str, Any], root: str = DEFAULT_ROOT) -> str:
     clean = stats["records"] - stats["dirty"]
     sentence = (
         f"`git.dirty` is true on {stats['dirty']} of the {stats['records']} records "
@@ -75,7 +76,7 @@ def render(stats, root=DEFAULT_ROOT) -> str:
     return "\n".join(lines)
 
 
-def splice(text, block) -> str:
+def splice(text: str, block: str) -> str:
     """Replace the marked block in text; raises ValueError when the markers are missing."""
     i, j = text.find(BEGIN), text.find(END)
     if i < 0 or j < i:
@@ -83,7 +84,7 @@ def splice(text, block) -> str:
     return text[:i] + block + text[j + len(END) :]
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

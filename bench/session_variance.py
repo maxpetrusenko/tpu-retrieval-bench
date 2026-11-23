@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +120,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Median, p90 and max of abs_pct_delta per size class, plus the all-cells line."""
     out: dict[str, Any] = {}
     big_n = 1_000_000
-    groups = {
+    groups: dict[str, Callable[[dict[str, Any]], bool]] = {
         "small": lambda r: r["size"] == "small",
         "mid": lambda r: r["size"] == "mid",
         "large": lambda r: r["size"] == "large",

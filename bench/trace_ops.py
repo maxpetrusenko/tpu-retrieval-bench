@@ -11,9 +11,10 @@ import argparse
 import gzip
 import json
 from pathlib import Path
+from typing import Any
 
 
-def device_events(trace):
+def device_events(trace: dict[str, Any]) -> list[tuple[str | None, dict[str, Any]]]:
     ev = trace["traceEvents"]
     dev = {
         e["pid"]
@@ -34,7 +35,7 @@ def device_events(trace):
     ]
 
 
-def summarize(path):
+def summarize(path: str | Path) -> str:
     with gzip.open(path, "rt") as f:
         trace = json.load(f)
     lines = []
@@ -50,7 +51,7 @@ def summarize(path):
     return "\n".join(lines) + "\n"
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("trace")
     p.add_argument("--out", default=None)
