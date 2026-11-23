@@ -1,132 +1,122 @@
-# Quality scorecard
+# Quality checklist
 
 read_when: judging whether the repo is ready to release or to cite, or picking the next quality fix.
 
-Eight dimensions, each scored 0 to 10. Target for every dimension: 9 or more. A score of 9 needs every criterion in its table below to pass; a failed criterion caps the dimension at 8. Scores are a maintainer judgement against the criteria, not a computed number. Criteria that a test or CI step checks name it.
+Eight dimensions. The target for every dimension is 9 or more on an independent review. This file is the maintainer checklist: the criteria below, the check or file that backs each one, and whether it is done. It does not score anything; independent review scores are in the review log. A dimension reaches 9 only when every criterion in its table is done; an open criterion caps it at 8. Criteria that a test or CI step checks name it.
 
-## Baseline, 2026-11-22
+## Review log
 
-Scored on `main` at 9b9d654 before the quality pass (#11, #12 and this PR were the response).
+Scores come from independent reviews, not from the maintainer.
 
-| dimension | baseline | main gap |
-|---|---|---|
-| CI/CD | 5 | self-hosted job only, no pins, no matrix, no dependabot |
-| Security | 6 | no policy, unpinned actions, self-hosted runner reachable from forks |
-| Reproducibility | 7 | no single entry point, no dirty-tree guard, counts in docs by hand |
-| Code quality | 7 | no type checking, 497-line `bench/run.py`, no `py.typed` |
-| Packaging/OSS | 7 | no `CITATION.cff`, version 0.1.0, no release changelog section |
-| Correctness/tests | 8 | strong, but a timing-statistics blind spot |
-| Methodology | 8 | 5 repetitions, no spread, headline outside its own CI |
-| Docs/honesty | 9 | caveats stated, numbers traced to JSON |
-| Overall | 7 | |
+| date | review | Tests | Repro | Method | Code | CI | Docs | Pack | Sec | Overall |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-11-22 | baseline on `main` at 9b9d654, before the quality pass | 8 | 7 | 8 | 7 | 5 | 9 | 7 | 6 | 7 |
+| 2026-11-22 | after #18 (Run 3 merged) | 9 | 8 | 8 | 9 | 7 | 8 | 8 | 7 | 8.0 |
 
-## Status after this PR
+The baseline row is the dimension table from the 9b9d654 baseline (Tests = Correctness/tests, Method = Methodology, Code = Code quality, Pack = Packaging/OSS, Sec = Security). Gaps named by the post-#18 review (CI 7, Security 7, Reproducibility 8, Methodology 8, Docs 8, Packaging 8) drive the items under "Open items".
 
-Which change addressed each dimension, and what is still open. "Met" means every criterion below passes on this branch; the overall rescore comes from review of the merged result.
+## Open items
 
-| dimension | addressed by | status |
-|---|---|---|
-| Correctness/tests | #12 (stats tests), this PR (planning, emit and headline tests) | met |
-| Reproducibility | #12 (script, dirty guard), this PR (interpreter resolution) | met: clean TPU rerun passed (Run 3) |
-| Methodology | #12 (20 reps, CIs), this PR (headline = median, mixed-basis labels) | met: Run 3 published as schema 0.2 with CIs (Runs 1 and 2 stay 0.1) |
-| Code quality | this PR (mypy, module split, `py.typed`) | met |
-| CI/CD | #11 (hosted matrix, pins), this PR (mypy and wheel steps) | open: TPU smoke check |
-| Docs/honesty | #12 (doc counts), this PR (QPS basis note, this file) | met |
-| Packaging/OSS | #11 (`SECURITY.md`), this PR (`CITATION.cff`, 0.2.0, classifiers, changelog) | open: release tag (after the TPU rerun) |
-| Security | #11 (pins, permissions, fork guard, policy) | partial: no dependency audit job |
-
-## Remaining open items
-
-1. ~~Clean TPU rerun with 20 repeats and spread~~ Done (Run 3, 2026-11-22): `bash scripts/reproduce_all.sh results/tpu/run3` on a free Colab v5e-1 from clean commit 0945fb1. 121 schema 0.2 records, 20 repetitions each, 0 dirty, `validate_results --strict` 0 failed; the quoted numbers in `docs/RESULTS.md` section 9 and the README come from it. Runs 1 and 2 remain best-of-5, schema 0.1.
-2. TPU smoke check: a short run (one shape, one repeat set) that fails when the TPU path breaks. CPU CI cannot see Mosaic lowering or VMEM limits (`CONTRIBUTING.md`).
-3. Tag `v0.2.0`: the rerun has landed, so the tag is unblocked. No tag is created by the results PR.
-4. Dependency audit job (Security). Not started.
+1. Tag `v0.2.0` after the quality PR merges; `release.yml` then builds the release. No tag is created by a PR. After the first release, archive it on Zenodo and add the DOI to `CITATION.cff`.
+2. Apply branch protection on `main` once the new check names exist (the exact command is in the PR description).
+3. First run of `scripts/tpu_smoke.sh` on a TPU (manual or through the `tpu-smoke` workflow on a `[self-hosted, tpu]` runner). CPU CI cannot see Mosaic lowering or VMEM limits (`CONTRIBUTING.md`).
+4. Small-shape claims stay low-confidence until a second session reproduces them (`docs/BENCHMARK_METHOD.md` rule 9).
 
 ## Criteria
 
 ### Correctness/tests
 
-| criterion | check | status |
+| criterion | check | checklist |
 |---|---|---|
-| Exact variants match the float64 oracle | `tests/test_correctness.py`, `tests/test_pallas*.py`, `tests/test_blockwise.py` | pass |
-| Ties, padding and masks are covered | `tests/test_ties.py`, `tests/test_padding.py`, `tests/test_properties.py` (hypothesis) | pass |
-| Result plausibility guard has bad-record tests | `tests/test_validate.py` (one case per rule, including the 0.2 headline rules) | pass |
-| Committed TPU results validate | `tests/test_validate.py::test_committed_tpu_results_are_plausible`, CI step `validate_results results/tpu` | pass |
-| Driver modules have direct tests | `tests/test_plan.py` (job order, file names, registry, timing lanes), `tests/test_run.py` (end to end) | pass |
-| Suite runs on 3.12 and 3.13 | CI `lint-test` matrix | pass |
+| Exact variants match the float64 oracle | `tests/test_correctness.py`, `tests/test_pallas*.py`, `tests/test_blockwise.py` | done |
+| Ties, padding and masks are covered | `tests/test_ties.py`, `tests/test_padding.py`, `tests/test_properties.py` (hypothesis) | done |
+| Result plausibility guard has bad-record tests | `tests/test_validate.py` (one case per rule, including the 0.2 headline rules) | done |
+| Committed TPU results validate | `tests/test_validate.py::test_committed_tpu_results_are_plausible`, CI step `validate_results results/tpu` | done |
+| Driver modules have direct tests | `tests/test_plan.py` (job order, file names, registry, timing lanes), `tests/test_run.py` (end to end) | done |
+| Suite runs on 3.12 and 3.13 | CI `lint-test` matrix | done |
 
 ### Reproducibility
 
-| criterion | check | status |
+| criterion | check | checklist |
 |---|---|---|
-| One command regenerates the grid | `scripts/reproduce_all.sh`, `tests/test_reproduce.py` (dry run) | pass |
-| Interpreter does not depend on a bare `python` | `$PYTHON`, else `uv run python`, else `python3`, else `python`; four cases in `tests/test_reproduce.py` | pass |
-| Dependencies locked | `uv.lock`, CI `uv sync --locked` | pass |
-| Records name their code and data | git commit, dirty flag, dataset hash and seed in every record; dirty runs refused without `--allow-dirty` (`tests/test_run.py`) | pass |
-| Doc numbers equal the JSON | `bench/doc_stats.py`, `tests/test_doc_stats.py` | pass |
-| Quoted TPU numbers come from a clean 20-repeat run | `results/tpu/run3` and `run3-devtime`: 121 records, `git.dirty` false on all, commit 0945fb1, `repetitions` 20, `validate_results --strict` 0 failed; dirty counts generated by `bench.doc_stats` | pass |
+| One command regenerates the grid | `scripts/reproduce_all.sh`, `tests/test_reproduce.py` (dry run) | done |
+| Interpreter does not depend on a bare `python` | `$PYTHON`, else `uv run python`, else `python3`, else `python`; four cases in `tests/test_reproduce.py` | done |
+| Dependencies locked | `uv.lock`, CI `uv sync --locked` | done |
+| Colab install uses the lock | `notebooks/constraints.txt` exported by `scripts/export_constraints.sh`; `tests/test_constraints.py`, `tests/test_notebook.py` | done |
+| Notebook runs the canonical command on a pinned ref | `tests/test_notebook.py` (`REF`, `RUN_ID`, `reproduce_all.sh`) | done |
+| Records name their code and data | git commit, dirty flag, dataset hash and seed in every record; dirty runs refused without `--allow-dirty` (`tests/test_run.py`) | done |
+| Doc numbers equal the JSON | `bench/doc_stats.py`, `tests/test_doc_stats.py` | done |
+| Quoted TPU numbers come from a clean 20-repeat run | `results/tpu/run3` and `run3-devtime`: 121 records, `git.dirty` false on all, commit 0945fb1, `repetitions` 20, `validate_results --strict` 0 failed; dirty counts generated by `bench.doc_stats` | done |
 
 ### Methodology
 
-| criterion | check | status |
+| criterion | check | checklist |
 |---|---|---|
-| At least 20 repetitions by default, 5 minimum | `--reps`, `tests/test_run.py::test_reps_flag_and_minimum` | pass |
-| Spread reported with a deterministic CI | stdev, bootstrap CI (seed 0), `tests/test_timing.py` | pass |
-| Headline statistic equals the CI statistic | schema 0.2 `qps` = `qps_median` inside `qps_ci95`; validator and `tests/test_validate.py` | pass |
-| Comparisons never mix min with median | `bench.summarize` and `bench.plot` switch to `qps_best` and label it for mixed 0.1/0.2 input; `tests/test_summarize.py`, `tests/test_run.py` | pass |
-| Noise is flagged | "within noise" speedups excluded from fast_p | pass |
-| Published results carry spread | Run 3 records carry `qps_ci95` and stdev (schema 0.2, 20 repetitions); `docs/RESULTS.md` section 9 quotes median with CI. Runs 1 and 2 are still 0.1 and labelled so | pass |
+| At least 20 repetitions by default, 5 minimum | `--reps`, `tests/test_run.py::test_reps_flag_and_minimum` | done |
+| Spread reported with a deterministic CI | stdev, bootstrap CI (seed 0), `tests/test_timing.py` | done |
+| Headline statistic equals the CI statistic | schema 0.2 `qps` = `qps_median` inside `qps_ci95`; validator and `tests/test_validate.py` | done |
+| Comparisons never mix min with median | `bench.summarize` and `bench.plot` switch to `qps_best` and label it for mixed 0.1/0.2 input; `tests/test_summarize.py`, `tests/test_run.py` | done |
+| Noise is flagged | "within noise" speedups excluded from fast_p | done |
+| Between-session variance stated, small shapes low-confidence | `docs/BENCHMARK_METHOD.md` rule 9, `docs/RESULTS.md` 9.10, README | done |
+| Published results carry spread | Run 3 records carry `qps_ci95` and stdev (schema 0.2, 20 repetitions); `docs/RESULTS.md` section 9 quotes median with CI. Runs 1 and 2 are still 0.1 and labelled so | done |
 
 ### Code quality
 
-| criterion | check | status |
+| criterion | check | checklist |
 |---|---|---|
-| Library is strictly typed | `uv run mypy`, strict flags on `src/trbench`, CI step | pass |
-| Scripts are type-checked | `check_untyped_defs` on `bench/`; the split run modules also forbid untyped defs | pass |
-| Type ignores are few, targeted and commented | 4 in `src/`, each with an error code and reason; `tests/test_quality.py` | pass |
-| Typed marker ships | `src/trbench/py.typed`, wheel include, CI wheel check | pass |
-| Lint clean | `uv run ruff check .`, CI step | pass |
-| No file reaches 500 lines | `tests/test_quality.py` (largest driver module 268 lines) | pass |
-| Driver split by concern | `bench/cli.py`, `algos.py`, `plan.py`, `execute.py`, `emit.py`, `run.py` | pass |
+| Library is strictly typed | `uv run mypy`, strict flags on `src/trbench`, CI step | done |
+| Scripts are type-checked | `check_untyped_defs` on `bench/`; the split run modules also forbid untyped defs | done |
+| Type ignores are few, targeted and commented | 4 in `src/`, each with an error code and reason; `tests/test_quality.py` | done |
+| Typed marker ships | `src/trbench/py.typed`, wheel include, CI wheel check | done |
+| Lint clean | `uv run ruff check .`, CI step | done |
+| No file reaches 500 lines | `tests/test_quality.py` (largest driver module 268 lines) | done |
+| Driver split by concern | `bench/cli.py`, `algos.py`, `plan.py`, `execute.py`, `emit.py`, `run.py` | done |
 
 ### CI/CD
 
-| criterion | check | status |
+| criterion | check | checklist |
 |---|---|---|
-| Hosted lint, type and test on a version matrix | `lint-test` on 3.12 and 3.13 | pass |
-| Every action pinned to a commit SHA | `tests/test_quality.py`, dependabot updates the pins | pass |
-| Least privilege | `permissions: {}` at top, `contents: read` per job, `persist-credentials: false` | pass |
-| Self-hosted runner never runs fork code | job `if` guard on the repository name | pass |
-| Concurrency and timeouts set | `concurrency` group, `timeout-minutes` per job | pass |
-| Packaging is exercised | CI builds the wheel and checks `py.typed` is inside | pass |
-| TPU path has a smoke check | rerun host job | open |
+| Hosted lint, type and test on a version matrix | `lint-test` on 3.12 and 3.13 | done |
+| Every action pinned to a commit SHA | `tests/test_workflows.py` (all workflows), dependabot updates the pins | done |
+| Least privilege | `permissions: {}` at top, `contents: read` per job, `persist-credentials: false` | done |
+| Self-hosted runner never runs fork code | job runs on push to main and manual dispatch only, never for pull requests; isolation in `SECURITY.md` (`tests/test_workflows.py`) | done |
+| Concurrency and timeouts set | `concurrency` group, `timeout-minutes` per job | done |
+| Packaging is exercised | CI `package` job: `uv build`, wheel installed into a fresh venv, import, `py.typed` | done |
+| Coverage gated | `pytest --cov`, `fail_under` in `pyproject.toml` (`tests/test_workflows.py`) | done |
+| Committed results and doc counts checked in CI | `validate_results --strict` on run3 and run3-devtime, `doc_stats --check`, `reproduce_all.sh` dry run | done |
+| TPU path has a smoke check | `scripts/tpu_smoke.sh`, `bench/smoke_compare.py`, manual `tpu-smoke` workflow; first TPU run pending | done (script), open (first run) |
 
 ### Docs/honesty
 
-| criterion | check | status |
+| criterion | check | checklist |
 |---|---|---|
-| Every number traced to a committed JSON or marked "derived" | `docs/RESULTS.md`, `CONTRIBUTING.md` publishing rules | pass |
-| Not-measured items are stated | support matrix, "Things that look wrong", limitations | pass |
-| Method is documented where it changes | `docs/BENCHMARK_METHOD.md` items 4 and 6, `docs/RESULTS.md` methodology note | pass |
-| Changelog matches the release | `CHANGELOG.md` section `[0.2.0]`, empty Unreleased (`tests/test_quality.py`) | pass |
+| Every number traced to a committed JSON or marked "derived" | `docs/RESULTS.md`, `CONTRIBUTING.md` publishing rules | done |
+| Not-measured items are stated | support matrix, "Things that look wrong", limitations | done |
+| Method is documented where it changes | `docs/BENCHMARK_METHOD.md` items 4 and 6, `docs/RESULTS.md` methodology note | done |
+| Changelog matches the release | `CHANGELOG.md` section `[0.2.0]`, empty Unreleased (`tests/test_quality.py`) | done |
 
 ### Packaging/OSS
 
-| criterion | check | status |
+| criterion | check | checklist |
 |---|---|---|
-| License and notices | `LICENSE` (Apache-2.0), `NOTICE`, SPDX `license` in `pyproject.toml` | pass |
-| Citable | `CITATION.cff` (version and license equal `pyproject.toml`, `tests/test_quality.py`), README "Cite" | pass |
-| Metadata complete | readme, authors, keywords, classifiers, project URLs | pass |
-| Version consistent | `pyproject.toml`, `CITATION.cff`, changelog heading, all 0.2.0 | pass |
-| Contributor path | `CONTRIBUTING.md`, issue and PR templates, `.pre-commit-config.yaml` | pass |
-| Tagged release | `v0.2.0` after the TPU rerun | open |
+| License and notices | `LICENSE` (Apache-2.0), `NOTICE`, SPDX `license` in `pyproject.toml` | done |
+| Citable | `CITATION.cff` (version and license equal `pyproject.toml`, `tests/test_quality.py`), README "Cite" | done |
+| Metadata complete | readme, authors, keywords, classifiers, project URLs | done |
+| Version consistent | `pyproject.toml`, `CITATION.cff`, changelog heading, all 0.2.0 | done |
+| Contributor path | `CONTRIBUTING.md`, issue and PR templates, `.pre-commit-config.yaml` | done |
+| Release automation | `.github/workflows/release.yml` (tag = pyproject version, CHANGELOG notes, dists attached), `scripts/release_notes.py` | done |
+| Tagged release | `v0.2.0` after the quality PR merges | open |
+| Install path stated | README Install: not on PyPI, install from git | done |
 
 ### Security
 
-| criterion | check | status |
+| criterion | check | checklist |
 |---|---|---|
-| Disclosure policy | `SECURITY.md` with private advisory link | pass |
-| Supply chain pinned | SHA-pinned actions, `uv.lock`, dependabot for actions and uv | pass |
-| No credentials in the repo or CI | no secrets referenced in workflows; checkout does not persist the token | pass |
-| Self-hosted runner isolated from forks | job `if` guard | pass |
-| Dependency vulnerability scan | no audit job yet | open |
+| Disclosure policy | `SECURITY.md`: advisory link, supported versions, 7-day acknowledgement, 90-day fix or advisory, CVE handling | done |
+| Supply chain pinned | SHA-pinned actions, `uv.lock`, dependabot for actions and uv | done |
+| No credentials in the repo or CI | no secrets referenced in workflows; checkout does not persist the token | done |
+| Self-hosted runner isolated from forks | no pull_request trigger for the job; ephemeral runner without secrets (`SECURITY.md`) | done |
+| Dependency vulnerability scan | CI `audit` job: `pip-audit` on the exported lock | done |
+| Code scanning | `codeql.yml` (python, default queries) | done |
+| Supply-chain posture tracked | `scorecard.yml` (OpenSSF Scorecard, results published) | done |
+| Branch protection on `main` | command in the PR description, applied after merge | open |

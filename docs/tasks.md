@@ -10,7 +10,7 @@ read_when: picking the next slice or checking status.
 - TPU lowering from CPU (`trace(...).lower(lowering_platforms=("tpu",))`) works for V3; covered by `tests/test_pallas.py`.
 
 - S4 harness + data: ann-benchmarks loader (`datasets.py`), roofline helpers, plots, Colab notebook, method doc.
-- Integration: `bench/run.py --dataset/--data-dir/--n-train/--n-test`, roofline fields in every record, `select_only` without matmul FLOP/s, `selection_over_matmul` (R5), blockwise and pallas_score charged for score-matrix HBM traffic.
+- Integration (written before the `bench/run.py` split into `cli.py`, `algos.py`, `plan.py`, `execute.py`, `emit.py`; flags unchanged): `bench/run.py --dataset/--data-dir/--n-train/--n-test`, roofline fields in every record, `select_only` without matmul FLOP/s, `selection_over_matmul` (R5), blockwise and pallas_score charged for score-matrix HBM traffic.
 
 - S5 TPU run (2026-11-18, Colab v5e-1): results in `results/tpu/`, report in `docs/RESULTS.md`, `bench/summarize.py`, `bench/dump_lowered.py`, `bench/trace_ops.py`, `bench/profile_one.py`. Mosaic accepted the Pallas kernel; stage-split ratio measured (0.77x to 8.16x). Notebook fixes: device check and profiler run as subprocesses, browser User-Agent in `bench/download.py`.
 

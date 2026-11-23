@@ -28,7 +28,17 @@ What the tests and committed results show today. "CPU interpret" = pytest on CPU
 | `pallas_fused_topk` (V4) | ip, l2, cos; mask; ties; non-aligned N/D; k <= 128; TPU lowering test from CPU | ip (synthetic), l2 (SIFT-1M); block sweep at N=1M | untested |
 | `pallas_fused_bucket` (V4b) | recall tested (approximate); TPU lowering test from CPU | ip (synthetic), l2 (SIFT-1M); block sweep at N=1M | untested |
 
-Mask support (`False` = excluded): `jit_topk`, `blockwise` and `pallas_score` are tested with a 30% mask on CPU; `bench/run.py` has no mask option, so no TPU record uses one. GPU: Pallas TPU kernels do not target GPU, and the XLA variants were never run there.
+Mask support (`False` = excluded): `jit_topk`, `blockwise` and `pallas_score` are tested with a 30% mask on CPU; the benchmark CLI (`bench/cli.py`: `--algos`, `--m`, `--n`, `--d`, `--k`, `--metric`, `--dtype`, ...) has no mask argument, so no TPU record uses one. GPU: Pallas TPU kernels do not target GPU, and the XLA variants were never run there.
+
+## Install
+
+Not published to PyPI. Install from git, pinned to a release tag (or a commit):
+
+```
+pip install "trbench @ git+https://github.com/maxpetrusenko/tpu-retrieval-bench@v0.2.0"
+```
+
+For development and for rerunning the benchmark use a checkout and `uv sync --locked` (see Quickstart). The tag `v0.2.0` exists once the release is cut; until then use `@main`.
 
 ## Quickstart (CPU)
 
@@ -37,17 +47,17 @@ uv sync --extra hdf5 --extra plot
 JAX_PLATFORMS=cpu uv run pytest -q
 uv run ruff check .
 uv run mypy
-uv run python bench/run.py --algos jit_topk,blockwise,pallas_score,score_only,select_only --m 16 --n 65536 --d 128 --k 10
-uv run python bench/download.py sift
-uv run python bench/run.py --dataset sift-128-euclidean --n-train 100000 --n-test 1000 --algos jit_topk,blockwise
-uv run python bench/plot.py
+uv run python -m bench.run --algos jit_topk,blockwise,pallas_score,score_only,select_only --m 16 --n 65536 --d 128 --k 10
+uv run python -m bench.download sift
+uv run python -m bench.run --dataset sift-128-euclidean --n-train 100000 --n-test 1000 --algos jit_topk,blockwise
+uv run python -m bench.plot
 ```
 
 Results go to `results/<platform>/<dataset>/k<k>/<algo>/<params>.json`. CPU numbers only exercise the harness; they are not comparable to TPU numbers.
 
 ## Colab TPU
 
-[Open the notebook in Colab](https://colab.research.google.com/github/maxpetrusenko/tpu-retrieval-bench/blob/main/notebooks/colab_tpu.ipynb) and pick a TPU v5e-1 runtime. The notebook runs `bash scripts/reproduce_all.sh <fresh dir>`, the same single command for a local TPU host: full grid, block and recall sweeps, device time, then `validate_results --strict` and `summarize`. Records carry stdev and bootstrap 95% CIs from 20 repetitions; `bench/run.py` refuses a dirty git tree unless `--allow-dirty`.
+[Open the notebook in Colab](https://colab.research.google.com/github/maxpetrusenko/tpu-retrieval-bench/blob/main/notebooks/colab_tpu.ipynb) and pick a TPU v5e-1 runtime. The notebook checks out the pinned release tag (`REF`), installs the locked dependency versions (`notebooks/constraints.txt`) and runs `PYTHON=python3 bash scripts/reproduce_all.sh results/tpu/run-<date>`, the same single command for a local TPU host: full grid, block and recall sweeps, device time, then `validate_results --strict` and `summarize`. Records carry stdev and bootstrap 95% CIs from 20 repetitions; `bench/run.py` refuses a dirty git tree unless `--allow-dirty`.
 
 ## Results
 
@@ -59,7 +69,7 @@ TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Three runs:
 - Block size: 6% to 7% for the scoring kernel, 2.3x to 4.9x (fused_topk) and 1.5x to 2.1x (fused_bucket) best over worst; bn=1024 was best in all four fused sweeps.
 - `approx_max_k` at recall target 0.95: 565,089 QPS on SIFT-1M at recall 0.9802, 23.4x the exact baseline (24,120 QPS), 75.7% of peak on synthetic N=1M, M=1024 (579,189 QPS, 25.5x). The recall-target sweep (0.80 to 0.99) kept recall at 1.0 and moved QPS by 5.4%; it is not a recall curve.
 - Wall timing carries a 0.32 to 0.60 ms per-call overhead (device time, N=1M), 47% of an `approx_max_k` call at M=128.
-- Run 3 reproduced Run 2 within 2% on the best pass at N=1M, M >= 128 and SIFT-1M; small shapes moved up to 36% between sessions, which the within-run CIs do not show.
+- Run 3 reproduced Run 2 within 2% on the best pass at N=1M, M >= 128 and SIFT-1M; small shapes moved up to 36% between sessions, which the within-run CIs do not show. **Low confidence:** every claim at small shapes (N=65,536, and M <= 16 at any N) rests on one session per run and can move by tens of percent in another; treat those ratios as indicative. The large-shape claims (N=1M, M >= 128, SIFT-1M) held within 2%.
 - Not measured yet: matmul-only block sweep, recall-versus-QPS curve on real data, GloVe and GIST.
 
 ![SIFT-1M recall vs QPS on TPU v5e-1](docs/img/tpu_recall_qps_sift-128-euclidean_1000000_128_10_bf16.png)
@@ -70,4 +80,4 @@ If you use this benchmark or its numbers, cite it through [CITATION.cff](CITATIO
 
 ## Quality
 
-The scorecard that tracks code, CI, reproducibility and security targets, with the checks behind each score, is [docs/QUALITY.md](docs/QUALITY.md).
+The maintainer checklist for code, CI, reproducibility and security, with the checks behind each criterion and the independent review log, is [docs/QUALITY.md](docs/QUALITY.md).

@@ -9,6 +9,8 @@ authors:
 version: 0.2.0
 date-released: 2026-11-22
 license: Apache-2.0
+# TODO: after the first GitHub release (v0.2.0), archive it on Zenodo and add the DOI here
+# (`doi:` field, or an `identifiers:` entry). Left out on purpose until the DOI exists.
 repository-code: "https://github.com/maxpetrusenko/tpu-retrieval-bench"
 keywords:
   - tpu

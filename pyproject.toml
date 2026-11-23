@@ -29,7 +29,16 @@ data = ["h5py"]
 plot = ["matplotlib"]
 
 [dependency-groups]
-dev = ["pytest", "ruff", "mypy", "nbformat", "h5py", "matplotlib", "hypothesis"]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+    "nbformat",
+    "h5py",
+    "matplotlib",
+    "hypothesis",
+    "pytest-cov>=7.1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -42,6 +51,15 @@ include = ["src/trbench/py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["trbench", "bench"]
+
+[tool.coverage.report]
+# Measured 90.4% on 2026-11-22; threshold = measured minus 2, rounded down.
+fail_under = 88
+skip_covered = true
+show_missing = true
 
 [tool.ruff]
 line-length = 100

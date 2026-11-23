@@ -1,0 +1,26 @@
+# Manual only: needs a self-hosted runner with a TPU and the label `tpu`. No GitHub-hosted runner
+# has a TPU, so this workflow is never triggered by a push or a pull request. Without such a
+# runner, run `bash scripts/tpu_smoke.sh` by hand on a TPU VM or in Colab (see CONTRIBUTING.md).
+name: tpu-smoke
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  smoke:
+    name: tpu-smoke
+    runs-on: [self-hosted, tpu]
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install the locked dependencies plus jax[tpu] into a fresh venv
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -q -c notebooks/constraints.txt -e ".[data,plot]" "jax[tpu]==0.12.0.1" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+      - name: smoke run, validate, compare with Run 3
+        env:
+          PYTHON: ${{ runner.temp }}/venv/bin/python
+        run: bash scripts/tpu_smoke.sh

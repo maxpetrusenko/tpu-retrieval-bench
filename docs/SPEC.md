@@ -67,11 +67,15 @@ One JSON per (dataset, algo, params, batch, k) at `results/<platform>/<dataset>/
 ```
 src/trbench/  reference.py jit_topk.py blockwise.py pallas_score.py pallas_fused.py approx.py
               data.py timing.py roofline.py records.py env.py
-bench/        run.py (CLI sweep -> results/*.json)  plot.py
+bench/        run.py (driver) cli.py algos.py plan.py execute.py emit.py (the split run driver:
+              arguments, registry, job plan, timing and recall, record writing)
+              validate_results.py summarize.py plot.py doc_stats.py smoke_compare.py ...
+scripts/      reproduce_all.sh tpu_smoke.sh export_constraints.sh release_notes.py
 tests/        test_correctness.py test_timing.py test_records.py
-notebooks/    colab_tpu.ipynb (pip install git+repo, verify jax.devices(), run sweep, save results)
+notebooks/    colab_tpu.ipynb (pinned ref, constraints install, verify jax.devices(), reproduce_all.sh)
 docs/         SPEC.md presearch/ RESULTS.md (findings + HLO/XProf excerpt)
-.github/workflows/ci.yml  (CPU: jax[cpu], Pallas interpret mode, ruff, pytest)
+.github/workflows/  ci.yml (CPU: Pallas interpret mode, ruff, mypy, pytest with coverage, audit, package)
+                    codeql.yml scorecard.yml release.yml tpu-smoke.yml (manual, TPU runner)
 ```
 Python >= 3.12, jax 0.12.x, `uv`. Pallas imports from `jax.experimental.pallas`, `pltpu.CompilerParams`. Files < 500 LOC.
 
