@@ -58,10 +58,14 @@ def _roofline_fields(meas: Measurement, a: Args, device_kind: str) -> tuple[Any,
         bn = resolve_blocks(meas.batch_size, n, d, bp["bm"], bp["bn"], bp["bk"], a.chunk)[1]
         dt.update(n_tiles=-(-n // bn), kprime=bp.get("kprime", bp.get("lanes")))
     bs = meas.batch_size
-    rf_bytes = sum(roofline.bytes_moved(rf_algo, s, n, d, k, a.dtype, **dt)
-                   for s in meas.batch_sizes)
-    return (rf_bytes, roofline.arithmetic_intensity(rf_algo, bs, n, d, k, a.dtype, **dt),
-            roofline.label(rf_algo, bs, n, d, k, a.dtype, device_kind, **dt))
+    rf_bytes = sum(
+        roofline.bytes_moved(rf_algo, s, n, d, k, a.dtype, **dt) for s in meas.batch_sizes
+    )
+    return (
+        rf_bytes,
+        roofline.arithmetic_intensity(rf_algo, bs, n, d, k, a.dtype, **dt),
+        roofline.label(rf_algo, bs, n, d, k, a.dtype, device_kind, **dt),
+    )
 
 
 def build_run_record(meas: Measurement, a: Args, hw: dict[str, Any], git: dict[str, Any]) -> Record:
@@ -80,14 +84,31 @@ def build_run_record(meas: Measurement, a: Args, hw: dict[str, Any], git: dict[s
     bs = meas.batch_size
     return records.build_record(
         dataset={
-            "name": a.dataset, "source_url": None, "n_train": n, "n_test": m, "dim": d,
-            "distance": a.metric, "dtype_stored": a.dtype if in_factories else "float32",
-            "dtype_compute": a.dtype, "seed": a.seed, "hash": meas.dataset_hash,
+            "name": a.dataset,
+            "source_url": None,
+            "n_train": n,
+            "n_test": m,
+            "dim": d,
+            "distance": a.metric,
+            "dtype_stored": a.dtype if in_factories else "float32",
+            "dtype_compute": a.dtype,
+            "seed": a.seed,
+            "hash": meas.dataset_hash,
         },
-        algorithm={"name": meas.name, "params": {"precision": a.dtype, **meas.params},
-                   "exact": meas.exact},
-        query={"k": k, "batch_size": bs, "n_batches": len(meas.batch_sizes), "mode": "batch",
-               "n_queries_timed": m, "warmup_iters": a.warmup, "repetitions": a.reps},
+        algorithm={
+            "name": meas.name,
+            "params": {"precision": a.dtype, **meas.params},
+            "exact": meas.exact,
+        },
+        query={
+            "k": k,
+            "batch_size": bs,
+            "n_batches": len(meas.batch_sizes),
+            "mode": "batch",
+            "n_queries_timed": m,
+            "warmup_iters": a.warmup,
+            "repetitions": a.reps,
+        },
         hardware=hw,
         metrics={
             "recall": meas.recall,
@@ -127,29 +148,49 @@ def build_run_record(meas: Measurement, a: Args, hw: dict[str, Any], git: dict[s
     )
 
 
-def record_path(a: Args, hw: dict[str, Any], algo: str, k: int, m: int, n: int, d: int,
-                bp: BlockParams | None) -> Path:
-    return records.result_path(a.out, hw["platform"], a.dataset, k, algo,
-                               params_str(algo, m, n, d, a, bp))
+def record_path(
+    a: Args, hw: dict[str, Any], algo: str, k: int, m: int, n: int, d: int, bp: BlockParams | None
+) -> Path:
+    return records.result_path(
+        a.out, hw["platform"], a.dataset, k, algo, params_str(algo, m, n, d, a, bp)
+    )
 
 
-def write_run_record(a: Args, hw: dict[str, Any], meas: Measurement, bp: BlockParams | None,
-                     rec: Record) -> Path:
+def write_run_record(
+    a: Args, hw: dict[str, Any], meas: Measurement, bp: BlockParams | None, rec: Record
+) -> Path:
     path = record_path(a, hw, meas.algo, meas.k, meas.m, meas.n, meas.d, bp)
     return records.write_record(path, rec)
 
 
-def write_error(a: Args, algo: str, m: int, n: int, d: int, k: int, bp: BlockParams | None,
-                hw: dict[str, Any], exc: BaseException) -> Path:
-    return records.write_record(record_path(a, hw, algo, k, m, n, d, bp), {
-        "error": f"{type(exc).__name__}: {str(exc)[:500]}", "algo": algo,
-        "shape": {"m": m, "n": n, "d": d, "k": k}, "batch_size": min(a.batch_size, m),
-    })
+def write_error(
+    a: Args,
+    algo: str,
+    m: int,
+    n: int,
+    d: int,
+    k: int,
+    bp: BlockParams | None,
+    hw: dict[str, Any],
+    exc: BaseException,
+) -> Path:
+    return records.write_record(
+        record_path(a, hw, algo, k, m, n, d, bp),
+        {
+            "error": f"{type(exc).__name__}: {str(exc)[:500]}",
+            "algo": algo,
+            "shape": {"m": m, "n": n, "d": d, "k": k},
+            "batch_size": min(a.batch_size, m),
+        },
+    )
 
 
-def link_stages(stage: dict[tuple[int, ...], dict[str, tuple[Path, Record]]],
-                exact: dict[tuple[int, ...], list[tuple[Path, Record]]], a: Args,
-                dkind: str) -> None:
+def link_stages(
+    stage: dict[tuple[int, ...], dict[str, tuple[Path, Record]]],
+    exact: dict[tuple[int, ...], list[tuple[Path, Record]]],
+    a: Args,
+    dkind: str,
+) -> None:
     """R5: when score_only and select_only ran on the same shape, write the ratio into both.
 
     select_only is labelled from the ratio; score_only never is (it has no selection). Exact
@@ -169,8 +210,17 @@ def link_stages(stage: dict[tuple[int, ...], dict[str, tuple[Path, Record]]],
             mt["selection_over_matmul"] = ratio
         ds = se["dataset"]
         se["metrics"]["roofline_label"] = roofline.label(
-            "select_only", se["query"]["batch_size"], ds["n_train"], ds["dim"], key[3], a.dtype,
-            dkind, select_time_s=t_sel, matmul_time_s=t_mm, **dt)
+            "select_only",
+            se["query"]["batch_size"],
+            ds["n_train"],
+            ds["dim"],
+            key[3],
+            a.dtype,
+            dkind,
+            select_time_s=t_sel,
+            matmul_time_s=t_mm,
+            **dt,
+        )
         records.write_record(sp, sc)
         records.write_record(lp, se)
         if ratio > 1:

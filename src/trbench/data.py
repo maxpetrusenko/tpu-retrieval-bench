@@ -10,8 +10,9 @@ import numpy.typing as npt
 F32 = npt.NDArray[np.float32]
 
 
-def synthetic(m: int, n: int, d: int, *, seed: int = 0,
-              mask_frac: float = 0.0) -> tuple[F32, F32, npt.NDArray[np.bool_] | None]:
+def synthetic(
+    m: int, n: int, d: int, *, seed: int = 0, mask_frac: float = 0.0
+) -> tuple[F32, F32, npt.NDArray[np.bool_] | None]:
     """Return (queries f32 [m,d], db f32 [n,d], mask bool [n] | None)."""
     rng = np.random.default_rng(seed)
     q = rng.standard_normal((m, d), dtype=np.float32)
@@ -27,9 +28,16 @@ def _int_rows(rng: np.random.Generator, n: int, d: int, hi: int) -> F32:
     return rng.integers(-hi, hi + 1, size=(n, d)).astype(np.float32)
 
 
-def tie_heavy(m: int, n: int, d: int, *, seed: int = 0, mode: str = "duplicate",
-              n_unique: int = 7,
-              mask_frac: float = 0.0) -> tuple[F32, F32, npt.NDArray[np.bool_] | None]:
+def tie_heavy(
+    m: int,
+    n: int,
+    d: int,
+    *,
+    seed: int = 0,
+    mode: str = "duplicate",
+    n_unique: int = 7,
+    mask_frac: float = 0.0,
+) -> tuple[F32, F32, npt.NDArray[np.bool_] | None]:
     """Many exactly tied scores. Integer-valued data keeps ties exact under f32.
 
     duplicate: db rows drawn (with repeats, shuffled) from `n_unique` distinct rows.
@@ -49,8 +57,9 @@ def tie_heavy(m: int, n: int, d: int, *, seed: int = 0, mode: str = "duplicate",
     return q, e, mask
 
 
-def worst_case(m: int, n: int, d: int, *, kind: str = "all_equal",
-               seed: int = 0) -> tuple[F32, F32, None]:
+def worst_case(
+    m: int, n: int, d: int, *, kind: str = "all_equal", seed: int = 0
+) -> tuple[F32, F32, None]:
     """Adversarial selection inputs (ip/l2-exact in f32 for moderate n).
 
     all_equal: every db row identical, so every score ties for every query.
@@ -79,8 +88,7 @@ def data_hash(*arrays: npt.ArrayLike | None) -> str:
     return h.hexdigest()[:16]
 
 
-def recall_at_k(ref_scores: npt.ArrayLike, got_scores: npt.ArrayLike,
-                eps: float = 1e-3) -> float:
+def recall_at_k(ref_scores: npt.ArrayLike, got_scores: npt.ArrayLike, eps: float = 1e-3) -> float:
     """ann-benchmarks distance-threshold recall: got counts if score >= kth ref score - tol."""
     ref = np.asarray(ref_scores, dtype=np.float64)
     got = np.asarray(got_scores, dtype=np.float64)

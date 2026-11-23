@@ -44,8 +44,9 @@ class Measurement:
     db: npt.NDArray[np.float32]
 
 
-def get_inputs(a: Args, m: int, n: int, d: int, ann: dict[str, Any] | None = None) -> tuple[
-        npt.NDArray[np.float32], npt.NDArray[np.float32], dict[str, Any] | None, str]:
+def get_inputs(
+    a: Args, m: int, n: int, d: int, ann: dict[str, Any] | None = None
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], dict[str, Any] | None, str]:
     """(queries, db, truth, dataset_hash). truth = ann dict or None (synthetic)."""
     if ann is not None:
         return ann["test"], ann["train"], ann, ann["hash"]
@@ -53,8 +54,9 @@ def get_inputs(a: Args, m: int, n: int, d: int, ann: dict[str, Any] | None = Non
     return q, e, None, data.data_hash(q, e)
 
 
-def compute_recall(a: Args, k: int, q: Any, e: Any, ann: dict[str, Any] | None,
-                   got_scores: Any) -> tuple[float | None, int | None, float | None]:
+def compute_recall(
+    a: Args, k: int, q: Any, e: Any, ann: dict[str, Any] | None, got_scores: Any
+) -> tuple[float | None, int | None, float | None]:
     """(recall, n_queries_used, recall_epsilon_0.01). Dataset: knn_recall vs file truth, eps 1e-3
     (`recall`) and 1e-2 (`recall_epsilon_0.01`, ann-benchmarks "epsilon" metric). bf16 scoring
     perturbs distances by ~1e-3, so exact bf16 variants can fall below 1.0 at eps 1e-3 only.
@@ -65,14 +67,18 @@ def compute_recall(a: Args, k: int, q: Any, e: Any, ann: dict[str, Any] | None,
     m = q.shape[0]
     if ann is not None:
         dist = datasets.scores_to_distances(got_scores, a.metric, q)
-        return (datasets.knn_recall(dist, ann["distances"], k), m,
-                datasets.knn_recall(dist, ann["distances"], k, eps=1e-2))
+        return (
+            datasets.knn_recall(dist, ann["distances"], k),
+            m,
+            datasets.knn_recall(dist, ann["distances"], k, eps=1e-2),
+        )
     idx = np.arange(m)
     if m * e.shape[0] * e.shape[1] > REF_LIMIT:
         idx = np.unique(np.linspace(0, m - 1, min(m, SAMPLE_QUERIES)).astype(int))
     ref_scores, _ = reference.numpy_ref(q[idx], e, k, metric=a.metric)
-    rec = data.recall_at_k(ref_scores, np.asarray(got_scores)[idx],
-                           eps=1e-2 if a.dtype == "bf16" else 1e-4)
+    rec = data.recall_at_k(
+        ref_scores, np.asarray(got_scores)[idx], eps=1e-2 if a.dtype == "bf16" else 1e-4
+    )
     return rec, len(idx), None
 
 
@@ -83,8 +89,11 @@ def time_numpy(q: Any, e: Any, k: int, a: Args) -> tuple[dict[str, Any], Any]:
         got, _ = reference.numpy_ref(q, e, k, metric=a.metric)
         times.append(time.perf_counter() - t0)
     times = times[a.warmup :]
-    res: dict[str, Any] = {"compile_time_s": 0.0, "times_s": times,
-                           "latency_ms": timing.summarize(times)}
+    res: dict[str, Any] = {
+        "compile_time_s": 0.0,
+        "times_s": times,
+        "latency_ms": timing.summarize(times),
+    }
     if a.serial:
         st = []
         for i in range(a.serial):
@@ -95,8 +104,9 @@ def time_numpy(q: Any, e: Any, k: int, a: Args) -> tuple[dict[str, Any], Any]:
     return res, got
 
 
-def time_jax(algo: str, q: Any, e: Any, k: int, a: Args, bp: BlockParams | None) -> tuple[
-        dict[str, Any], Any, str, bool, dict[str, Any], float, int, list[int]]:
+def time_jax(
+    algo: str, q: Any, e: Any, k: int, a: Args, bp: BlockParams | None
+) -> tuple[dict[str, Any], Any, str, bool, dict[str, Any], float, int, list[int]]:
     """Prepare once (untimed index build, timed separately), then time batched search."""
     dtype = DTYPES[a.dtype]
     m = q.shape[0]
@@ -111,19 +121,24 @@ def time_jax(algo: str, q: Any, e: Any, k: int, a: Args, bp: BlockParams | None)
     qb = [qd[i : i + bs] for i in range(0, m, bs)]
     score_fn = params.pop("score_fn", None)
     if score_fn is not None:  # select_only: scores built untimed per batch
+
         def make_args(i: int) -> tuple[Any, ...]:
             return (score_fn(qb[i], index),)
     else:
+
         def make_args(i: int) -> tuple[Any, ...]:
             return (qb[i], index)
+
     keep = algo not in STAGE_ONLY
     wall = loop = None
     if a.timing in ("wall", "both"):
-        wall = timing.time_batched(search_fn, make_args, len(qb), warmup=a.warmup,
-                                   repetitions=a.reps, keep_out=keep)
+        wall = timing.time_batched(
+            search_fn, make_args, len(qb), warmup=a.warmup, repetitions=a.reps, keep_out=keep
+        )
     if a.timing in ("loop", "both"):
-        loop = timing.time_batched_loop(search_fn, make_args, len(qb), inner=a.loop_iters,
-                                        warmup=a.warmup, repetitions=a.reps)
+        loop = timing.time_batched_loop(
+            search_fn, make_args, len(qb), inner=a.loop_iters, warmup=a.warmup, repetitions=a.reps
+        )
     if wall is not None:
         res = dict(wall)
     else:  # loop headline: the loop returns a checksum, so outputs come from one untimed pass
@@ -132,9 +147,11 @@ def time_jax(algo: str, q: Any, e: Any, k: int, a: Args, bp: BlockParams | None)
         res = {**loop, "outs": outs}
     res["wall"], res["loop"] = wall, loop
     if a.serial:
+
         def serial_args(i: int) -> tuple[Any, ...]:
             q1 = qd[i % m : i % m + 1]
             return (score_fn(q1, index),) if score_fn is not None else (q1, index)
+
         res["serial"] = timing.time_serial(search_fn, serial_args, a.serial, warmup=a.warmup)
     if a.device_time:
         res["device"] = timing.device_time(search_fn, *make_args(0), calls=a.reps)
@@ -145,8 +162,16 @@ def time_jax(algo: str, q: Any, e: Any, k: int, a: Args, bp: BlockParams | None)
     return res, got, name, exact, params, prepare_s, int(size), [len(x) for x in qb]
 
 
-def measure(algo: str, m: int, n: int, d: int, k: int, a: Args, bp: BlockParams | None = None,
-            ann: dict[str, Any] | None = None) -> Measurement:
+def measure(
+    algo: str,
+    m: int,
+    n: int,
+    d: int,
+    k: int,
+    a: Args,
+    bp: BlockParams | None = None,
+    ann: dict[str, Any] | None = None,
+) -> Measurement:
     """Time one job and score its recall. Unknown algos exit with an error."""
     q, e, truth, dhash = get_inputs(a, m, n, d, ann)
     m, n = q.shape[0], e.shape[0]
@@ -158,12 +183,32 @@ def measure(algo: str, m: int, n: int, d: int, k: int, a: Args, bp: BlockParams 
         name, exact, params = "numpy_ref", True, {}
     elif algo in FACTORIES:
         res, got_scores, name, exact, params, prepare_s, size, sizes = time_jax(
-            algo, q, e, k, a, bp)
+            algo, q, e, k, a, bp
+        )
     else:
         raise SystemExit(f"unknown algo {algo}")
     recall, n_recall_q, recall_eps2 = compute_recall(a, k, q, e, truth, got_scores)
-    return Measurement(algo, name, exact, params, k, m, n, d, bs, sizes, res, prepare_s, size,
-                       dhash, recall, n_recall_q, recall_eps2, q, e)
+    return Measurement(
+        algo,
+        name,
+        exact,
+        params,
+        k,
+        m,
+        n,
+        d,
+        bs,
+        sizes,
+        res,
+        prepare_s,
+        size,
+        dhash,
+        recall,
+        n_recall_q,
+        recall_eps2,
+        q,
+        e,
+    )
 
 
 def compile_hlo(algo: str, q: Any, e: Any, k: int, a: Args, bp: BlockParams | None) -> str:
@@ -178,5 +223,8 @@ def compile_hlo(algo: str, q: Any, e: Any, k: int, a: Args, bp: BlockParams | No
 
 
 def is_oom(exc: BaseException) -> bool:
-    return (type(exc).__name__ == "XlaRuntimeError" or "RESOURCE_EXHAUSTED" in str(exc)
-            or isinstance(exc, MemoryError))
+    return (
+        type(exc).__name__ == "XlaRuntimeError"
+        or "RESOURCE_EXHAUSTED" in str(exc)
+        or isinstance(exc, MemoryError)
+    )

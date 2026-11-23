@@ -12,13 +12,17 @@ import sys
 from trbench.validate import is_dirty, iter_records, validate_tree
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("paths", nargs="*", default=["results"], help="files or directories")
-    ap.add_argument("--allow-empty", action="store_true",
-                    help="do not fail when no JSON records are found")
-    ap.add_argument("--strict", action="store_true",
-                    help="also fail records with git.dirty=true (default: warn with a count)")
+    ap.add_argument(
+        "--allow-empty", action="store_true", help="do not fail when no JSON records are found"
+    )
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="also fail records with git.dirty=true (default: warn with a count)",
+    )
     args = ap.parse_args(argv)
     total, dirty, failures = 0, [], {}
     for p in args.paths:
@@ -38,8 +42,10 @@ def main(argv=None) -> int:
         for e in errs:
             print(f"  - {e}")
     if dirty and not args.strict:
-        print(f"warning: {len(dirty)} of {total} records have git.dirty=true "
-              "(use --strict to fail on them)")
+        print(
+            f"warning: {len(dirty)} of {total} records have git.dirty=true "
+            "(use --strict to fail on them)"
+        )
     print(f"checked {total} records, {len(failures)} failed")
     if total == 0 and not args.allow_empty:
         print("no records found", file=sys.stderr)

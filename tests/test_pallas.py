@@ -7,8 +7,13 @@ from trbench import data
 from trbench.pallas_score import make_pallas_parts, make_pallas_score, pallas_score
 from trbench.reference import numpy_ref
 
-UNSUPPORTED_PLATFORM = ("unknown platform", "unsupported platform", "not supported on",
-                        "no lowering rule registered for platform", "platform tpu")
+UNSUPPORTED_PLATFORM = (
+    "unknown platform",
+    "unsupported platform",
+    "not supported on",
+    "no lowering rule registered for platform",
+    "platform tpu",
+)
 M, N, D = 8, 600, 100  # N, D non-multiples of 128
 
 
@@ -19,8 +24,18 @@ def test_f32_exact_ids(metric, use_mask, k):
     q, e, mask = data.synthetic(M, N, D, seed=1, mask_frac=0.3 if use_mask else 0.0)
     rs, ri = numpy_ref(q, e, k, metric=metric, mask=mask)
     # small blocks force multi-tile grid, multi-chunk scan and D tiling
-    s, i = pallas_score(q, e, k, metric=metric, mask=mask, compute_dtype=jnp.float32,
-                        bm=16, bn=128, bk=128, chunk=256)
+    s, i = pallas_score(
+        q,
+        e,
+        k,
+        metric=metric,
+        mask=mask,
+        compute_dtype=jnp.float32,
+        bm=16,
+        bn=128,
+        bk=128,
+        chunk=256,
+    )
     np.testing.assert_array_equal(np.asarray(i), ri)
     np.testing.assert_allclose(np.asarray(s), rs, rtol=1e-4, atol=1e-4)
 
@@ -40,8 +55,9 @@ def test_tie_policy():
 
 
 def test_tpu_lowering_from_cpu():
-    f = make_pallas_score(10, metric="l2", has_mask=True, bm=16, bn=128, bk=128,
-                          chunk=256, interpret=False)
+    f = make_pallas_score(
+        10, metric="l2", has_mask=True, bm=16, bn=128, bk=128, chunk=256, interpret=False
+    )
     q = jax.ShapeDtypeStruct((16, 128), jnp.float32)
     e = jax.ShapeDtypeStruct((512, 128), jnp.float32)
     mk = jax.ShapeDtypeStruct((512,), jnp.bool_)

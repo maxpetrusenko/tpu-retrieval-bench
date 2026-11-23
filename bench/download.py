@@ -63,13 +63,14 @@ def fetch(name: str, out: Path) -> Path:
     return dest
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("names", nargs="+", help="sift | glove | gist or full dataset name")
     p.add_argument("--out", default=str(DATA_DIR))
     a = p.parse_args(argv)
     for n in a.names:
         fetch(n, Path(a.out))
+    return 0
 
 
 if __name__ == "__main__":

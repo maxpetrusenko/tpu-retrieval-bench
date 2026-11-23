@@ -11,19 +11,31 @@ import argparse
 import gzip
 import json
 from pathlib import Path
+from typing import Any
 
 
-def device_events(trace):
+def device_events(trace: dict[str, Any]) -> list[tuple[str | None, dict[str, Any]]]:
     ev = trace["traceEvents"]
-    dev = {e["pid"] for e in ev if e.get("ph") == "M" and e.get("name") == "process_name"
-           and str(e["args"].get("name", "")).startswith("/device:TPU")}
-    names = {(e["pid"], e["tid"]): e["args"]["name"] for e in ev
-             if e.get("ph") == "M" and e.get("name") == "thread_name"}
-    return [(names.get((e["pid"], e["tid"])), e) for e in ev
-            if e.get("ph") == "X" and e.get("pid") in dev]
+    dev = {
+        e["pid"]
+        for e in ev
+        if e.get("ph") == "M"
+        and e.get("name") == "process_name"
+        and str(e["args"].get("name", "")).startswith("/device:TPU")
+    }
+    names = {
+        (e["pid"], e["tid"]): e["args"]["name"]
+        for e in ev
+        if e.get("ph") == "M" and e.get("name") == "thread_name"
+    }
+    return [
+        (names.get((e["pid"], e["tid"])), e)
+        for e in ev
+        if e.get("ph") == "X" and e.get("pid") in dev
+    ]
 
 
-def summarize(path):
+def summarize(path: str | Path) -> str:
     with gzip.open(path, "rt") as f:
         trace = json.load(f)
     lines = []
@@ -31,13 +43,15 @@ def summarize(path):
         if thread not in ("XLA Modules", "XLA Ops"):
             continue
         a = e.get("args", {})
-        lines.append(f"[{thread}] {e['name']}: {e['dur']:.1f} us"
-                     f" | bytes_accessed={a.get('bytes_accessed', '-')}"
-                     f" | category={a.get('hlo_category', '-')}\n    {a.get('long_name', '')}")
+        lines.append(
+            f"[{thread}] {e['name']}: {e['dur']:.1f} us"
+            f" | bytes_accessed={a.get('bytes_accessed', '-')}"
+            f" | category={a.get('hlo_category', '-')}\n    {a.get('long_name', '')}"
+        )
     return "\n".join(lines) + "\n"
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("trace")
     p.add_argument("--out", default=None)

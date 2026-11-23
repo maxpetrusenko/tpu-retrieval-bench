@@ -20,8 +20,7 @@ def _ver(pkg: str) -> str | None:
         return None
 
 
-def git_info(repo: Path | None = None,
-             ignore: Sequence[str] = ("results",)) -> dict[str, Any]:
+def git_info(repo: Path | None = None, ignore: Sequence[str] = ("results",)) -> dict[str, Any]:
     """commit + dirty flag. `ignore` paths (relative to the repo) do not count as dirty: the
     benchmark's own output directory is not a change to the code under test."""
     cwd = repo or Path(__file__).resolve().parents[2]

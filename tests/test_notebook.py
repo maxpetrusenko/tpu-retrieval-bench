@@ -49,8 +49,9 @@ def test_notebook_text_does_not_name_a_stale_run():
 def test_notebook_plots_go_to_the_untracked_run_directory_not_docs_img():
     plot = next(c for c in _code() if "bench/plot.py" in c)
     assert "--results {RUN_ID}" in plot and "--out {RUN_ID}/plots" in plot
-    assert "docs/img" not in "\n".join(line for line in plot.splitlines()
-                                       if not line.startswith("#"))
+    assert "docs/img" not in "\n".join(
+        line for line in plot.splitlines() if not line.startswith("#")
+    )
     zip_cell = next(c for c in _code() if "zip" in c)
     assert "docs/img" not in zip_cell and "results.zip results" in zip_cell
 

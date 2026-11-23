@@ -22,19 +22,29 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 from trbench.records import comparison_basis, qps_basis, qps_on
 
+Rec = dict[str, Any]
+GroupKey = tuple[Any, ...]
 PALETTE = ["#1f6f8b", "#d1495b", "#edae49", "#2e7d32", "#6a4c93", "#444444"]
-plt.rcParams.update({
-    "figure.facecolor": "white", "axes.facecolor": "white", "axes.grid": True,
-    "grid.color": "#e3e3e3", "axes.spines.top": False, "axes.spines.right": False,
-    "font.family": "DejaVu Sans", "savefig.dpi": 110,
-})
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "axes.grid": True,
+        "grid.color": "#e3e3e3",
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "font.family": "DejaVu Sans",
+        "savefig.dpi": 110,
+    }
+)
 
 
-def load(root):
-    recs = []
+def load(root: str | Path) -> list[Rec]:
+    recs: list[Rec] = []
     for p in sorted(Path(root).rglob("*.json")):
         try:
             r = json.loads(p.read_text())
@@ -45,36 +55,47 @@ def load(root):
     return recs
 
 
-def color_map(recs):
+def color_map(recs: list[Rec]) -> dict[str, str]:
     names = sorted({r["algorithm"]["name"] for r in recs})
     return {n: PALETTE[i % len(PALETTE)] for i, n in enumerate(names)}
 
 
-def group_key(r):
+def group_key(r: Rec) -> GroupKey:
     """Plots never mix platforms or shapes: one group per (platform, dataset, n, d, k, dtype)."""
     ds = r["dataset"]
-    return (r["hardware"]["platform"], ds["name"], ds["n_train"], ds["dim"], r["query"]["k"],
-            r["algorithm"]["params"].get("precision", ds.get("dtype_compute")))
+    return (
+        r["hardware"]["platform"],
+        ds["name"],
+        ds["n_train"],
+        ds["dim"],
+        r["query"]["k"],
+        r["algorithm"]["params"].get("precision", ds.get("dtype_compute")),
+    )
 
 
-def group_tag(key, kind):
+def group_tag(key: GroupKey, kind: str) -> str:
     """File stem: platform first (tpu_..., cpu_...), then plot kind, then the rest of the key."""
     return "_".join([str(key[0]), kind, *(str(x) for x in key[1:])])
 
 
-def group_title(key):
+def group_title(key: GroupKey) -> str:
     plat, ds, n, d, k, dt = key
     return f"{plat} {ds} N={n} D={d} k={k} {dt}"
 
 
-def keep(r, a):
+def keep(r: Rec, a: argparse.Namespace) -> bool:
     ds = r["dataset"]
-    checks = ((a.platform, r["hardware"]["platform"]), (a.dataset, ds["name"]),
-              (a.n, ds["n_train"]), (a.d, ds["dim"]), (a.k, r["query"]["k"]))
+    checks = (
+        (a.platform, r["hardware"]["platform"]),
+        (a.dataset, ds["name"]),
+        (a.n, ds["n_train"]),
+        (a.d, ds["dim"]),
+        (a.k, r["query"]["k"]),
+    )
     return all(want is None or want == got for want, got in checks)
 
 
-def best_configs(recs, basis=None):
+def best_configs(recs: list[Rec], basis: str | None = None) -> list[Rec]:
     """Per (algo, recall_target, batch size) keep the highest-QPS record.
 
     Collapses the Pallas block sweep (and any other tuning knobs) to the best config per shape.
@@ -90,34 +111,47 @@ def best_configs(recs, basis=None):
     return list(best.values())
 
 
-def grouped(recs):
+def grouped(recs: list[Rec]) -> dict[GroupKey, list[Rec]]:
     """Records per group_key, unreduced (so the QPS basis sees every schema in the group)."""
-    out = defaultdict(list)
+    out: defaultdict[GroupKey, list[Rec]] = defaultdict(list)
     for r in recs:
         out[group_key(r)].append(r)
     return dict(sorted(out.items(), key=lambda kv: str(kv[0])))
 
 
-def groups(recs):
+def groups(recs: list[Rec]) -> dict[GroupKey, list[Rec]]:
     return {k: best_configs(v) for k, v in grouped(recs).items()}
 
 
-def qps_label(basis, mixed):
+def qps_label(basis: str, mixed: bool) -> str:
     """Axis text naming the statistic behind plotted QPS."""
     return f"QPS, {basis} pass" + (" (mixed 0.1/0.2 records)" if mixed else "")
 
 
-def plot_recall_qps(key, recs, cm, out, basis="best", mixed=False):
+def plot_recall_qps(
+    key: GroupKey,
+    recs: list[Rec],
+    cm: dict[str, str],
+    out: Path,
+    basis: str = "best",
+    mixed: bool = False,
+) -> Path | None:
     recs = [r for r in recs if r["metrics"].get("recall") is not None]
     if not recs:
         return None
     fig, ax = plt.subplots(figsize=(6.5, 4.2))
-    curves = defaultdict(list)
+    curves: defaultdict[str, list[tuple[float, float]]] = defaultdict(list)
     for r in recs:
         a = r["algorithm"]
         if a.get("exact", True):
-            ax.scatter(r["metrics"]["recall"], qps_on(r, basis), color=cm[a["name"]],
-                       s=36, label=a["name"], zorder=3)
+            ax.scatter(
+                r["metrics"]["recall"],
+                qps_on(r, basis),
+                color=cm[a["name"]],
+                s=36,
+                label=a["name"],
+                zorder=3,
+            )
         else:
             curves[a["name"]].append((r["metrics"]["recall"], qps_on(r, basis)))
     for name, pts in curves.items():
@@ -133,13 +167,19 @@ def plot_recall_qps(key, recs, cm, out, basis="best", mixed=False):
     return save(fig, out, f"{group_tag(key, 'recall_qps')}.png")
 
 
-def plot_batch(key, recs, cm, out, basis="best", mixed=False):
+def plot_batch(
+    key: GroupKey,
+    recs: list[Rec],
+    cm: dict[str, str],
+    out: Path,
+    basis: str = "best",
+    mixed: bool = False,
+) -> Path:
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(10, 4))
     series: dict[str, dict[int, tuple[float, Any]]] = defaultdict(dict)
     for r in recs:
         m, b = r["metrics"], r["query"]["batch_size"]
-        series[r["algorithm"]["name"]][b] = (qps_on(r, basis),
-                                             m["latency_ms_per_batch"].get("p99"))
+        series[r["algorithm"]["name"]][b] = (qps_on(r, basis), m["latency_ms_per_batch"].get("p99"))
     for name, pts in sorted(series.items()):
         xs = sorted(pts)
         a1.plot(xs, [pts[x][0] for x in xs], marker="o", color=cm[name], label=name)
@@ -154,8 +194,8 @@ def plot_batch(key, recs, cm, out, basis="best", mixed=False):
     return save(fig, out, f"{group_tag(key, 'batch_qps_p99')}.png")
 
 
-def plot_peak(key, recs, cm, out):
-    vals = defaultdict(list)
+def plot_peak(key: GroupKey, recs: list[Rec], cm: dict[str, str], out: Path) -> Path:
+    vals: defaultdict[str, list[float]] = defaultdict(list)
     for r in recs:
         pct = r["metrics"].get("percent_of_peak")
         if pct is not None:
@@ -166,14 +206,20 @@ def plot_peak(key, recs, cm, out):
         ax.bar(names, [max(vals[n]) for n in names], color=[cm[n] for n in names])
         ax.set_ylabel("best % of chip peak bf16 FLOP/s")
     else:
-        ax.text(0.5, 0.5, "no peak for this group\n(CPU, unknown chip, or f32 compute)",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "no peak for this group\n(CPU, unknown chip, or f32 compute)",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         ax.set_axis_off()
     ax.set_title(f"Achieved FLOP/s as % of peak: {group_title(key)}", fontsize=9)
     return save(fig, out, f"{group_tag(key, 'percent_of_peak')}.png")
 
 
-def save(fig, out, name):
+def save(fig: Figure, out: Path, name: str) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     path = out / name
     fig.tight_layout()
@@ -182,7 +228,7 @@ def save(fig, out, name):
     return path
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--results", default="results")
     p.add_argument("--out", default="docs/img")
@@ -201,8 +247,11 @@ def main(argv=None):
     for key, rs in groups(recs).items():
         basis = comparison_basis(raw[key])
         mixed = len({qps_basis(r) for r in raw[key]}) > 1
-        paths += [plot_recall_qps(key, rs, cm, out, basis, mixed),
-                  plot_batch(key, rs, cm, out, basis, mixed), plot_peak(key, rs, cm, out)]
+        paths += [
+            plot_recall_qps(key, rs, cm, out, basis, mixed),
+            plot_batch(key, rs, cm, out, basis, mixed),
+            plot_peak(key, rs, cm, out),
+        ]
     for p_ in filter(None, paths):
         print(p_)
 

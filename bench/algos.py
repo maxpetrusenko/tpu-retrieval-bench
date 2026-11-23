@@ -41,38 +41,64 @@ def _jit(k: int, dtype: Any, a: Args, bp: BlockParams | None) -> Built:
 
 
 def _blockwise(k: int, dtype: Any, a: Args, bp: BlockParams | None) -> Built:
-    p, s = make_blockwise_parts(k, metric=a.metric, compute_dtype=dtype,
-                                block_size=a.block_size)
+    p, s = make_blockwise_parts(k, metric=a.metric, compute_dtype=dtype, block_size=a.block_size)
     return p, s, "blockwise_topk", True, {"block_size": a.block_size}
 
 
 def _pallas(k: int, dtype: Any, a: Args, bp: BlockParams | None) -> Built:
     assert bp is not None, "pallas variants always run with block params"
     bm, bn, bk = bp
-    p, s = make_pallas_parts(k, metric=a.metric, compute_dtype=dtype, bm=bm, bn=bn, bk=bk,
-                             chunk=a.chunk)
-    return p, s, "pallas_score_topk", True, {"bm": bm, "bn": bn, "bk": bk, "chunk": a.chunk,
-                                             "interpret": jax.default_backend() != "tpu"}
+    p, s = make_pallas_parts(
+        k, metric=a.metric, compute_dtype=dtype, bm=bm, bn=bn, bk=bk, chunk=a.chunk
+    )
+    return (
+        p,
+        s,
+        "pallas_score_topk",
+        True,
+        {
+            "bm": bm,
+            "bn": bn,
+            "bk": bk,
+            "chunk": a.chunk,
+            "interpret": jax.default_backend() != "tpu",
+        },
+    )
 
 
 def _fused(mode: str) -> Factory:
-    def factory(k: int, dtype: Any, a: Args, bp: BlockParams | None,
-                n: int | None = None) -> Built:
+    def factory(k: int, dtype: Any, a: Args, bp: BlockParams | None, n: int | None = None) -> Built:
         assert bp is not None and n is not None, "fused variants need block params and db size"
         bm, bn, bk = bp
         kprime = a.kprime or k
-        p, s = make_fused_parts(k, n, metric=a.metric, compute_dtype=dtype, bm=bm, bn=bn, bk=bk,
-                                chunk=a.chunk, kprime=kprime, mode=mode, lanes=a.lanes)
-        params = {"bm": bm, "bn": bn, "bk": bk, "chunk": a.chunk,
-                  "interpret": jax.default_backend() != "tpu"}
+        p, s = make_fused_parts(
+            k,
+            n,
+            metric=a.metric,
+            compute_dtype=dtype,
+            bm=bm,
+            bn=bn,
+            bk=bk,
+            chunk=a.chunk,
+            kprime=kprime,
+            mode=mode,
+            lanes=a.lanes,
+        )
+        params = {
+            "bm": bm,
+            "bn": bn,
+            "bk": bk,
+            "chunk": a.chunk,
+            "interpret": jax.default_backend() != "tpu",
+        }
         params.update({"kprime": kprime} if mode == "topk" else {"lanes": a.lanes})
         return p, s, f"pallas_fused_{mode}", mode == "topk" and kprime == k, params
+
     return factory
 
 
 def _approx(k: int, dtype: Any, a: Args, bp: BlockParams | None) -> Built:
-    p, s = make_approx_parts(k, recall_target=a.recall_target, metric=a.metric,
-                             compute_dtype=dtype)
+    p, s = make_approx_parts(k, recall_target=a.recall_target, metric=a.metric, compute_dtype=dtype)
     return p, s, "approx_max_k", False, {"recall_target": a.recall_target}
 
 
@@ -87,9 +113,15 @@ def _select_only(k: int, dtype: Any, a: Args, bp: BlockParams | None) -> Built:
 
 
 FACTORIES: dict[str, Factory] = {
-    "jit_topk": _jit, "blockwise": _blockwise, "pallas_score": _pallas,
-    "pallas_fused_topk": _fused("topk"), "pallas_fused_bucket": _fused("bucket"),
-    "approx_max_k": _approx, "score_only": _score_only, "select_only": _select_only}
+    "jit_topk": _jit,
+    "blockwise": _blockwise,
+    "pallas_score": _pallas,
+    "pallas_fused_topk": _fused("topk"),
+    "pallas_fused_bucket": _fused("bucket"),
+    "approx_max_k": _approx,
+    "score_only": _score_only,
+    "select_only": _select_only,
+}
 
 
 def build(algo: str, k: int, dtype: Any, a: Args, bp: BlockParams | None, n: int) -> Built:

@@ -12,8 +12,13 @@ from trbench.pallas_fused import (
 )
 from trbench.reference import numpy_ref
 
-UNSUPPORTED_PLATFORM = ("unknown platform", "unsupported platform", "not supported on",
-                        "no lowering rule registered for platform", "platform tpu")
+UNSUPPORTED_PLATFORM = (
+    "unknown platform",
+    "unsupported platform",
+    "not supported on",
+    "no lowering rule registered for platform",
+    "platform tpu",
+)
 BLK = {"bm": 16, "bn": 128, "bk": 128, "chunk": 256, "compute_dtype": jnp.float32}
 
 
@@ -44,13 +49,15 @@ def test_heavy_mask_inf_ids_match_oracle():
 def test_tie_policy_across_tiles():
     db = np.ones((300, 4), dtype=np.float32)
     q = np.ones((1, 4), dtype=np.float32)
-    _, ids = pallas_fused_topk(q, db, 5, compute_dtype=jnp.float32, bm=16, bn=128, bk=128,
-                               chunk=256)
+    _, ids = pallas_fused_topk(
+        q, db, 5, compute_dtype=jnp.float32, bm=16, bn=128, bk=128, chunk=256
+    )
     assert np.asarray(ids)[0].tolist() == [0, 1, 2, 3, 4]
     db[:, 0] = 0.0
     db[[200, 3, 130]] = 2.0  # equal winners in three different tiles: ascending ids
-    _, ids = pallas_fused_topk(q, db, 3, compute_dtype=jnp.float32, bm=16, bn=128, bk=128,
-                               chunk=256)
+    _, ids = pallas_fused_topk(
+        q, db, 3, compute_dtype=jnp.float32, bm=16, bn=128, bk=128, chunk=256
+    )
     assert np.asarray(ids)[0].tolist() == [3, 130, 200]
 
 
@@ -97,8 +104,18 @@ def test_prepared_parts_match_one_shot():
 
 @pytest.mark.parametrize("mode", ["topk", "bucket"])
 def test_tpu_lowering_from_cpu(mode):
-    f = make_pallas_fused(10, 512, metric="l2", has_mask=True, bm=16, bn=128, bk=128,
-                          chunk=256, interpret=False, mode=mode)
+    f = make_pallas_fused(
+        10,
+        512,
+        metric="l2",
+        has_mask=True,
+        bm=16,
+        bn=128,
+        bk=128,
+        chunk=256,
+        interpret=False,
+        mode=mode,
+    )
     q = jax.ShapeDtypeStruct((16, 128), jnp.float32)
     e = jax.ShapeDtypeStruct((512, 128), jnp.float32)
     mk = jax.ShapeDtypeStruct((512,), jnp.bool_)

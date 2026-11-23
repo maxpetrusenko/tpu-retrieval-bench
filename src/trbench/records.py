@@ -53,10 +53,18 @@ def peak_flops(device_kind: str) -> float | None:
     return p.bf16_flops if p else None
 
 
-def build_record(*, dataset: dict[str, Any], algorithm: dict[str, Any], query: dict[str, Any],
-                 hardware: dict[str, Any], metrics: dict[str, Any],
-                 timing_extra: dict[str, Any] | None = None, git: dict[str, Any],
-                 matmul: bool = True, compute_dtype: str = "bf16") -> dict[str, Any]:
+def build_record(
+    *,
+    dataset: dict[str, Any],
+    algorithm: dict[str, Any],
+    query: dict[str, Any],
+    hardware: dict[str, Any],
+    metrics: dict[str, Any],
+    timing_extra: dict[str, Any] | None = None,
+    git: dict[str, Any],
+    matmul: bool = True,
+    compute_dtype: str = "bf16",
+) -> dict[str, Any]:
     """matmul=False (select_only): no matmul FLOP/s or percent_of_peak, all set to null.
 
     The peak table is bf16 only, so f32 compute gets flops_peak / percent_of_peak = null.
@@ -93,8 +101,9 @@ def build_record(*, dataset: dict[str, Any], algorithm: dict[str, Any], query: d
     }
 
 
-def result_path(root: str | Path, platform: str, dataset: str, k: int, algo: str,
-                params: str) -> Path:
+def result_path(
+    root: str | Path, platform: str, dataset: str, k: int, algo: str, params: str
+) -> Path:
     return Path(root) / platform / dataset / f"k{k}" / algo / f"{params}.json"
 
 

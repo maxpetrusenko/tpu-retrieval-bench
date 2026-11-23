@@ -24,19 +24,28 @@ pytestmark = pytest.mark.fuzz
 ROOT = Path(__file__).resolve().parents[1]
 SEED_RECORDS = sorted((ROOT / "results" / "tpu" / "run4").rglob("*.json"))[:40]
 EXAMPLES = int(os.environ.get("FUZZ_EXAMPLES", "300"))
-FUZZ = settings(max_examples=EXAMPLES, deadline=None, derandomize="FUZZ_EXAMPLES" not in os.environ,
-                suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large])
+FUZZ = settings(
+    max_examples=EXAMPLES,
+    deadline=None,
+    derandomize="FUZZ_EXAMPLES" not in os.environ,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
+)
 
 scalars = st.one_of(
-    st.none(), st.booleans(), st.integers(), st.floats(allow_nan=True, allow_infinity=True),
+    st.none(),
+    st.booleans(),
+    st.integers(),
+    st.floats(allow_nan=True, allow_infinity=True),
     st.text(max_size=20),
-    st.sampled_from([10**400, -(10**400), 1e308, -1e308, 5e-324, 0, -0.0, float("nan"),
-                     float("inf")]),
+    st.sampled_from(
+        [10**400, -(10**400), 1e308, -1e308, 5e-324, 0, -0.0, float("nan"), float("inf")]
+    ),
 )
 json_values = st.recursive(
     scalars,
-    lambda kids: st.one_of(st.lists(kids, max_size=5),
-                           st.dictionaries(st.text(max_size=12), kids, max_size=6)),
+    lambda kids: st.one_of(
+        st.lists(kids, max_size=5), st.dictionaries(st.text(max_size=12), kids, max_size=6)
+    ),
     max_leaves=30,
 )
 
@@ -135,11 +144,25 @@ def test_every_leaf_set_to_hostile_numbers_returns_problems():
             assert _problems_ok(validate_record(rec)), (path, value)
 
 
-@pytest.mark.parametrize("payload", [
-    b"", b"\xff\xfe", b"{", b"[]", b"null", b"0", b'"x"', b"NaN", b"{}", b"[" * 100000,
-    b"{" * 100000, b'{"a":' * 50000, b"1" * 10000,
-    json.dumps({"metrics": {"qps": 10**400}}).encode(),
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"",
+        b"\xff\xfe",
+        b"{",
+        b"[]",
+        b"null",
+        b"0",
+        b'"x"',
+        b"NaN",
+        b"{}",
+        b"[" * 100000,
+        b"{" * 100000,
+        b'{"a":' * 50000,
+        b"1" * 10000,
+        json.dumps({"metrics": {"qps": 10**400}}).encode(),
+    ],
+)
 def test_known_hostile_payloads_return_problems(payload):
     errs = validate_json_bytes(payload)
     assert _problems_ok(errs) and errs
@@ -164,7 +187,9 @@ def test_atheris_harness_target_runs_against_a_stub(monkeypatch):
     stub.Setup = lambda argv, fn: None  # type: ignore[attr-defined]
     stub.Fuzz = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "atheris", stub)
-    spec = importlib.util.spec_from_file_location("fuzz_validate", ROOT / "fuzz" / "fuzz_validate.py")
+    spec = importlib.util.spec_from_file_location(
+        "fuzz_validate", ROOT / "fuzz" / "fuzz_validate.py"
+    )
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

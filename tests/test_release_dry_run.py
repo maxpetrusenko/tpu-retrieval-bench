@@ -12,8 +12,14 @@ pytestmark = pytest.mark.skipif(shutil.which("uv") is None, reason="uv is needed
 
 
 def test_release_dry_run_builds_checksums_and_sbom(tmp_path):
-    r = subprocess.run(["bash", str(ROOT / "scripts" / "release_dry_run.sh"), str(tmp_path)],
-                       capture_output=True, text=True, check=False, cwd=ROOT, timeout=600)
+    r = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "release_dry_run.sh"), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=ROOT,
+        timeout=600,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
     assert "release dry run ok" in r.stdout
     dists = sorted(p.name for p in (tmp_path / "dist").iterdir() if not p.name.startswith("."))
@@ -28,18 +34,29 @@ def test_release_dry_run_builds_checksums_and_sbom(tmp_path):
 
 
 def test_dry_run_leaves_the_working_tree_alone(tmp_path):
-    before = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True,
-                            cwd=ROOT, check=True).stdout
-    subprocess.run(["bash", str(ROOT / "scripts" / "release_dry_run.sh"), str(tmp_path)],
-                   capture_output=True, check=True, cwd=ROOT, timeout=600)
-    after = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True,
-                           cwd=ROOT, check=True).stdout
+    before = subprocess.run(
+        ["git", "status", "--porcelain"], capture_output=True, text=True, cwd=ROOT, check=True
+    ).stdout
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "release_dry_run.sh"), str(tmp_path)],
+        capture_output=True,
+        check=True,
+        cwd=ROOT,
+        timeout=600,
+    )
+    after = subprocess.run(
+        ["git", "status", "--porcelain"], capture_output=True, text=True, cwd=ROOT, check=True
+    ).stdout
     assert before == after
 
 
 def test_release_assets_refuses_an_incomplete_dist_dir(tmp_path):
     (tmp_path / "only.whl").write_text("x")
-    r = subprocess.run(["bash", str(ROOT / "scripts" / "release_assets.sh"), str(tmp_path),
-                        str(tmp_path / "out")], capture_output=True, text=True, check=False,
-                       cwd=ROOT)
+    r = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "release_assets.sh"), str(tmp_path), str(tmp_path / "out")],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=ROOT,
+    )
     assert r.returncode == 1 and "expected a wheel and an sdist" in r.stderr

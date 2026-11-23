@@ -13,6 +13,7 @@ repos:
     rev: v0.8.6
     hooks:
       - id: ruff
+      - id: ruff-format
   - repo: local
     hooks:
       - id: notebook-outputs

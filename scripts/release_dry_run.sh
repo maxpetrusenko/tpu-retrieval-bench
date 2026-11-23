@@ -39,7 +39,11 @@ fi
 
 mkdir -p "$OUT/changelog"
 cp CHANGELOG.md CITATION.cff "$OUT/changelog/"
-if ! python3 scripts/changelog.py release "$VERSION" "$OUT/changelog/CHANGELOG.md" 2>/dev/null; then
+if python3 scripts/changelog.py release "$VERSION" "$OUT/changelog/CHANGELOG.md" 2>/dev/null; then
+  :
+elif python3 scripts/changelog.py release "$VERSION" "$OUT/changelog/CHANGELOG.md" --allow-pending 2>/dev/null; then
+  :  # version already cut; Unreleased holds the next release's entries
+else
   python3 scripts/changelog.py cut "$VERSION" "$(date -u +%Y-%m-%d)" "$OUT/changelog/CHANGELOG.md"
   python3 scripts/changelog.py release "$VERSION" "$OUT/changelog/CHANGELOG.md"
 fi

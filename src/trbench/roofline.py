@@ -22,8 +22,13 @@ PEAKS: dict[str, Peak] = {
 }
 
 VARIANTS = (
-    "jit_topk", "blockwise", "pallas_score", "pallas_fused", "approx_max_k",
-    "score_only", "select_only",
+    "jit_topk",
+    "blockwise",
+    "pallas_score",
+    "pallas_fused",
+    "approx_max_k",
+    "score_only",
+    "select_only",
 )
 # variants that write then re-read the full M x N f32 score matrix through HBM. blockwise and
 # pallas_score write all M*N scores to HBM (in chunks) and read them back for top_k. Only a
@@ -49,9 +54,19 @@ def _itemsize(dtype: object) -> int:
     return _ITEMSIZE[key]
 
 
-def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype: object = "bf16", *,
-                q_dtype: object = None, db_dtype: object = None, n_tiles: int | None = None,
-                kprime: int | None = None) -> float:
+def bytes_moved(
+    variant: str,
+    m: int,
+    n: int,
+    d: int,
+    k: int,
+    dtype: object = "bf16",
+    *,
+    q_dtype: object = None,
+    db_dtype: object = None,
+    n_tiles: int | None = None,
+    kprime: int | None = None,
+) -> float:
     """Modeled HBM bytes per search call.
 
     Reads Q (M*D) in `q_dtype` and E (N*D) in `db_dtype` (the dtype the index is stored in;
@@ -82,8 +97,9 @@ def bytes_moved(variant: str, m: int, n: int, d: int, k: int, dtype: object = "b
     return float(total)
 
 
-def arithmetic_intensity(variant: str, m: int, n: int, d: int, k: int, dtype: object = "bf16",
-                         **dt: Any) -> float:
+def arithmetic_intensity(
+    variant: str, m: int, n: int, d: int, k: int, dtype: object = "bf16", **dt: Any
+) -> float:
     """FLOP per HBM byte (select_only does no matmul: 0.0)."""
     if variant == "select_only":
         return 0.0
@@ -123,15 +139,21 @@ def label(
         if select_time_s is not None and matmul_time_s is not None:
             return "VPU/COP-bound" if select_time_s > matmul_time_s else "HBM-bound"
         return "unknown"
-    if (variant != "score_only" and select_time_s is not None and matmul_time_s is not None
-            and select_time_s > matmul_time_s):
+    if (
+        variant != "score_only"
+        and select_time_s is not None
+        and matmul_time_s is not None
+        and select_time_s > matmul_time_s
+    ):
         return "VPU/COP-bound"
     t_mxu = flops(m, n, d) / p.bf16_flops
     t_hbm = bytes_moved(variant, m, n, d, k, dtype, **dt) / p.hbm_bytes_per_s
     return "HBM-bound" if t_hbm > t_mxu else "MXU-bound"
 
 
-def percent_of_peak(achieved_flops: float, device_kind: str, dtype: object = "bf16") -> float | None:
+def percent_of_peak(
+    achieved_flops: float, device_kind: str, dtype: object = "bf16"
+) -> float | None:
     """% of the bf16 peak; None for unknown chips and for f32 compute (no f32 peak in table)."""
     p = peak_for(device_kind)
     if p is None or _itemsize(dtype) != 2:

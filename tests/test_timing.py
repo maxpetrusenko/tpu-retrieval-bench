@@ -16,8 +16,10 @@ def _search(k=5):
 
 def _args(m=64, n=8192, d=128):
     rng = np.random.default_rng(0)
-    return (jnp.asarray(rng.standard_normal((m, d), dtype=np.float32)),
-            jnp.asarray(rng.standard_normal((n, d), dtype=np.float32)))
+    return (
+        jnp.asarray(rng.standard_normal((m, d), dtype=np.float32)),
+        jnp.asarray(rng.standard_normal((n, d), dtype=np.float32)),
+    )
 
 
 def test_loop_mode_finite_positive():
@@ -66,8 +68,13 @@ def test_serial_count_and_percentiles():
 
 def test_device_time_from_profile_fake_planes():
     ev = lambda ns: NS(duration_ns=ns)
-    plane = NS(name="/device:TPU:0", lines=[NS(name="XLA Ops", events=[ev(9e6)]),
-                                            NS(name="XLA Modules", events=[ev(1e6), ev(3e6)])])
+    plane = NS(
+        name="/device:TPU:0",
+        lines=[
+            NS(name="XLA Ops", events=[ev(9e6)]),
+            NS(name="XLA Modules", events=[ev(1e6), ev(3e6)]),
+        ],
+    )
     host = NS(name="/host:CPU", lines=[NS(name="XLA Modules", events=[ev(5e6)])])
     assert timing.device_time_from_profile(NS(planes=[host, plane])) == (4.0, 2)
     assert timing.device_time_from_profile(NS(planes=[host])) == (None, 0)
@@ -79,8 +86,23 @@ def test_device_time_cpu_is_null_with_note():
 
 
 def _run(tmp_path, *extra):
-    run.main(["--algos", "jit_topk", "--m", "8", "--n", "2048", "--d", "16", "--k", "5",
-              "--out", str(tmp_path), *extra])
+    run.main(
+        [
+            "--algos",
+            "jit_topk",
+            "--m",
+            "8",
+            "--n",
+            "2048",
+            "--d",
+            "16",
+            "--k",
+            "5",
+            "--out",
+            str(tmp_path),
+            *extra,
+        ]
+    )
     (path,) = tmp_path.rglob("*.json")
     return json.loads(path.read_text())
 
@@ -94,8 +116,7 @@ def test_cli_wall_default_records_mode(tmp_path):
 
 
 def test_cli_both_serial_device(tmp_path):
-    r = _run(tmp_path, "--timing", "both", "--loop-iters", "4", "--serial", "12",
-             "--device-time")
+    r = _run(tmp_path, "--timing", "both", "--loop-iters", "4", "--serial", "12", "--device-time")
     mt, tm = r["metrics"], r["timing"]
     assert tm["mode"] == "both" and tm["headline"] == "wall" and tm["loop_iters"] == 4
     assert mt["best_search_time_s"] == mt["best_search_time_s_wall"] > 0

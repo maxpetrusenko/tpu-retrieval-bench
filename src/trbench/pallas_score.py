@@ -39,8 +39,16 @@ def default_interpret() -> bool:
     return jax.default_backend() != "tpu"
 
 
-def _kernel(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, o_ref: PallasRef,
-            acc_ref: PallasRef, *, nk: int, is_l2: bool) -> None:
+def _kernel(
+    q_ref: PallasRef,
+    e_ref: PallasRef,
+    aux_ref: PallasRef,
+    o_ref: PallasRef,
+    acc_ref: PallasRef,
+    *,
+    nk: int,
+    is_l2: bool,
+) -> None:
     kk = pl.program_id(2)
 
     @pl.when(kk == 0)
@@ -59,8 +67,9 @@ def _kernel(q_ref: PallasRef, e_ref: PallasRef, aux_ref: PallasRef, o_ref: Palla
         o_ref[...] = jnp.where(aux_ref[1:2, :] > 0.5, s, -jnp.inf)
 
 
-def score_tiles(q: Array, e: Array, aux: Array, *, bm: int, bn: int, bk: int, is_l2: bool,
-                interpret: bool) -> Array:
+def score_tiles(
+    q: Array, e: Array, aux: Array, *, bm: int, bn: int, bk: int, is_l2: bool, interpret: bool
+) -> Array:
     """q (Mp, Dp), e (Cn, Dp), aux (8, Cn) -> scores (Mp, Cn) f32. Dims are block multiples."""
     mp, dp = q.shape
     cn = e.shape[0]
@@ -84,8 +93,9 @@ def score_tiles(q: Array, e: Array, aux: Array, *, bm: int, bn: int, bk: int, is
     return out
 
 
-def resolve_blocks(m: int, n: int, d: int, bm: int, bn: int, bk: int,
-                   chunk: int) -> tuple[int, int, int, int]:
+def resolve_blocks(
+    m: int, n: int, d: int, bm: int, bn: int, bk: int, chunk: int
+) -> tuple[int, int, int, int]:
     """Clamp blocks for small shapes; chunk is a multiple of bn. Returns (bm, bn, bk, cn)."""
     bm = min(bm, round_up(m, 16))
     bn = min(bn, round_up(n, 128))
@@ -94,8 +104,11 @@ def resolve_blocks(m: int, n: int, d: int, bm: int, bn: int, bk: int,
     return bm, bn, bk, cn
 
 
-@partial(jax.tree_util.register_dataclass,
-         data_fields=["ecs", "auxs", "e_rem", "aux_rem"], meta_fields=["bn", "bk", "cn"])
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=["ecs", "auxs", "e_rem", "aux_rem"],
+    meta_fields=["bn", "bk", "cn"],
+)
 @dataclass
 class PallasIndex:
     """Prepared db: padded, compute dtype, aux (norms + valid) built once.
@@ -113,8 +126,16 @@ class PallasIndex:
     cn: int
 
 
-def prepare_pallas(db: Array, mask: Array | None, *, metric: str, compute_dtype: DTypeLike,
-                   bn: int, bk: int, chunk: int) -> PallasIndex:
+def prepare_pallas(
+    db: Array,
+    mask: Array | None,
+    *,
+    metric: str,
+    compute_dtype: DTypeLike,
+    bn: int,
+    bk: int,
+    chunk: int,
+) -> PallasIndex:
     n, d = db.shape
     _, bn, bk, cn = resolve_blocks(16, n, d, 16, bn, bk, chunk)
     dp, np_ = round_up(d, bk), round_up(n, bn)
@@ -131,8 +152,9 @@ def prepare_pallas(db: Array, mask: Array | None, *, metric: str, compute_dtype:
     ecs = ec[:full].reshape(nfull, cn, dp)
     auxs = aux[:, :full].reshape(8, nfull, cn).transpose(1, 0, 2)
     rem = np_ > full
-    return PallasIndex(ecs, auxs, ec[full:] if rem else None, aux[:, full:] if rem else None,
-                       bn, bk, cn)
+    return PallasIndex(
+        ecs, auxs, ec[full:] if rem else None, aux[:, full:] if rem else None, bn, bk, cn
+    )
 
 
 def padded_dim(idx: PallasIndex) -> int:
@@ -143,8 +165,16 @@ def padded_dim(idx: PallasIndex) -> int:
     return int(idx.e_rem.shape[1])
 
 
-def search_pallas(queries: Array, idx: PallasIndex, *, k: int, metric: str,
-                  compute_dtype: DTypeLike, bm: int, interpret: bool) -> tuple[Array, Array]:
+def search_pallas(
+    queries: Array,
+    idx: PallasIndex,
+    *,
+    k: int,
+    metric: str,
+    compute_dtype: DTypeLike,
+    bm: int,
+    interpret: bool,
+) -> tuple[Array, Array]:
     m, d = queries.shape
     bm = min(bm, round_up(m, 16))
     mp = round_up(m, bm)
@@ -153,11 +183,19 @@ def search_pallas(queries: Array, idx: PallasIndex, *, k: int, metric: str,
     if metric == "cos":
         q = l2_normalize(q)
     qc = jnp.pad(q.astype(compute_dtype), ((0, mp - m), (0, dp - d)))
-    kw: dict[str, Any] = {"bm": bm, "bn": idx.bn, "bk": idx.bk, "is_l2": metric == "l2", "interpret": interpret}
+    kw: dict[str, Any] = {
+        "bm": bm,
+        "bn": idx.bn,
+        "bk": idx.bk,
+        "is_l2": metric == "l2",
+        "interpret": interpret,
+    }
     carry = init_running(mp, k)
     if idx.ecs.shape[0]:
-        def step(carry: tuple[Array, Array],
-                 xs: tuple[Array, Array, Array]) -> tuple[tuple[Array, Array], None]:
+
+        def step(
+            carry: tuple[Array, Array], xs: tuple[Array, Array, Array]
+        ) -> tuple[tuple[Array, Array], None]:
             e_c, aux_c, off = xs
             s = score_tiles(qc, e_c, aux_c, **kw)
             bv, bi = block_topk(s, k, off)
@@ -173,14 +211,33 @@ def search_pallas(queries: Array, idx: PallasIndex, *, k: int, metric: str,
     return vals[:m], ids[:m]
 
 
-def make_pallas_parts(k: int, *, metric: str = "ip", compute_dtype: DTypeLike = jnp.bfloat16,
-                      has_mask: bool = False, bm: int = DEFAULT_BM, bn: int = DEFAULT_BN,
-                      bk: int = DEFAULT_BK, chunk: int = DEFAULT_CHUNK,
-                      interpret: bool | None = None) -> tuple[JitFn, JitFn]:
+def make_pallas_parts(
+    k: int,
+    *,
+    metric: str = "ip",
+    compute_dtype: DTypeLike = jnp.bfloat16,
+    has_mask: bool = False,
+    bm: int = DEFAULT_BM,
+    bn: int = DEFAULT_BN,
+    bk: int = DEFAULT_BK,
+    chunk: int = DEFAULT_CHUNK,
+    interpret: bool | None = None,
+) -> tuple[JitFn, JitFn]:
     interpret = default_interpret() if interpret is None else interpret
-    pk: dict[str, Any] = {"metric": metric, "compute_dtype": compute_dtype, "bn": bn, "bk": bk, "chunk": chunk}
-    sk: dict[str, Any] = {"k": k, "metric": metric, "compute_dtype": compute_dtype, "bm": bm,
-          "interpret": interpret}
+    pk: dict[str, Any] = {
+        "metric": metric,
+        "compute_dtype": compute_dtype,
+        "bn": bn,
+        "bk": bk,
+        "chunk": chunk,
+    }
+    sk: dict[str, Any] = {
+        "k": k,
+        "metric": metric,
+        "compute_dtype": compute_dtype,
+        "bm": bm,
+        "interpret": interpret,
+    }
     if has_mask:
         prep_fn = jax.jit(lambda e, mk: prepare_pallas(e, mk, **pk))
     else:
@@ -188,23 +245,50 @@ def make_pallas_parts(k: int, *, metric: str = "ip", compute_dtype: DTypeLike = 
     return prep_fn, jax.jit(lambda q, idx: search_pallas(q, idx, **sk))
 
 
-def make_pallas_score(k: int, *, metric: str = "ip", compute_dtype: DTypeLike = jnp.bfloat16,
-                      has_mask: bool = False, bm: int = DEFAULT_BM, bn: int = DEFAULT_BN,
-                      bk: int = DEFAULT_BK, chunk: int = DEFAULT_CHUNK,
-                      interpret: bool | None = None) -> JitFn:
+def make_pallas_score(
+    k: int,
+    *,
+    metric: str = "ip",
+    compute_dtype: DTypeLike = jnp.bfloat16,
+    has_mask: bool = False,
+    bm: int = DEFAULT_BM,
+    bn: int = DEFAULT_BN,
+    bk: int = DEFAULT_BK,
+    chunk: int = DEFAULT_CHUNK,
+    interpret: bool | None = None,
+) -> JitFn:
     interpret = default_interpret() if interpret is None else interpret
-    pk: dict[str, Any] = {"metric": metric, "compute_dtype": compute_dtype, "bn": bn, "bk": bk, "chunk": chunk}
-    sk: dict[str, Any] = {"k": k, "metric": metric, "compute_dtype": compute_dtype, "bm": bm,
-          "interpret": interpret}
+    pk: dict[str, Any] = {
+        "metric": metric,
+        "compute_dtype": compute_dtype,
+        "bn": bn,
+        "bk": bk,
+        "chunk": chunk,
+    }
+    sk: dict[str, Any] = {
+        "k": k,
+        "metric": metric,
+        "compute_dtype": compute_dtype,
+        "bm": bm,
+        "interpret": interpret,
+    }
     if has_mask:
         return jax.jit(lambda q, e, mk: search_pallas(q, prepare_pallas(e, mk, **pk), **sk))
     return jax.jit(lambda q, e: search_pallas(q, prepare_pallas(e, None, **pk), **sk))
 
 
-def pallas_score(queries: Array, db: Array, k: int, *, metric: str = "ip",
-                 mask: Array | None = None, compute_dtype: DTypeLike = jnp.bfloat16,
-                 **kw: Any) -> tuple[Array, Array]:
-    f = make_pallas_score(k, metric=metric, compute_dtype=compute_dtype,
-                          has_mask=mask is not None, **kw)
+def pallas_score(
+    queries: Array,
+    db: Array,
+    k: int,
+    *,
+    metric: str = "ip",
+    mask: Array | None = None,
+    compute_dtype: DTypeLike = jnp.bfloat16,
+    **kw: Any,
+) -> tuple[Array, Array]:
+    f = make_pallas_score(
+        k, metric=metric, compute_dtype=compute_dtype, has_mask=mask is not None, **kw
+    )
     out: tuple[Array, Array] = f(queries, db) if mask is None else f(queries, db, mask)
     return out

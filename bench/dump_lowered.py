@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -18,16 +19,17 @@ from trbench.jit_topk import make_jit_topk_parts
 from trbench.pallas_score import make_pallas_parts
 
 
-def lowered_text(fn, *args):
-    return fn.trace(*args).lower(lowering_platforms=("tpu",)).as_text()
+def lowered_text(fn: Any, *args: Any) -> str:
+    return str(fn.trace(*args).lower(lowering_platforms=("tpu",)).as_text())
 
 
-def dump(m, n, d, k, out):
+def dump(m: int, n: int, d: int, k: int, out: str | Path) -> dict[str, Path]:
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    q = jax.ShapeDtypeStruct((m, d), jnp.float32)
-    e = jax.ShapeDtypeStruct((n, d), jnp.float32)
-    paths = {}
+    # jax.ShapeDtypeStruct is untyped in the pinned jax
+    q = jax.ShapeDtypeStruct((m, d), jnp.float32)  # type: ignore[no-untyped-call]  # untyped in the pinned jax
+    e = jax.ShapeDtypeStruct((n, d), jnp.float32)  # type: ignore[no-untyped-call]  # untyped in the pinned jax
+    paths: dict[str, Path] = {}
     prep, search = make_jit_topk_parts(k)
     idx = jax.eval_shape(prep, e)
     paths["jit_topk"] = out / f"jit_topk_m{m}_n{n}_d{d}_k{k}.stablehlo.txt"
@@ -39,7 +41,7 @@ def dump(m, n, d, k, out):
     return paths
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     for name, default in (("m", 128), ("n", 1_000_000), ("d", 128), ("k", 10)):
         p.add_argument(f"--{name}", type=int, default=default)

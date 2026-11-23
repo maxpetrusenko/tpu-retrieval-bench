@@ -16,8 +16,13 @@ def _wf(name: str) -> str:
 
 def test_every_action_in_every_workflow_is_sha_pinned_with_a_version_comment():
     files = sorted(WF.glob("*.yml"))
-    assert {f.name for f in files} >= {"ci.yml", "codeql.yml", "scorecard.yml", "release.yml",
-                                       "tpu-smoke.yml"}
+    assert {f.name for f in files} >= {
+        "ci.yml",
+        "codeql.yml",
+        "scorecard.yml",
+        "release.yml",
+        "tpu-smoke.yml",
+    }
     for f in files:
         uses = re.findall(r"^\s*-?\s*uses:\s*(.+)$", f.read_text(), re.MULTILINE)
         assert uses, f.name
@@ -46,9 +51,13 @@ def test_ci_has_the_checks_branch_protection_names():
     assert "name: lint-test (py${{ matrix.python-version }})" in ci
     assert re.search(r"^  audit:\n    name: audit$", ci, re.MULTILINE)
     assert re.search(r"^  package:\n    name: package$", ci, re.MULTILINE)
-    for step in ("pytest -q --cov", "validate_results --strict results/tpu/run3 results/tpu/run3-devtime results/tpu/run4 results/tpu/run4-devtime",
-                 "doc_stats --check docs/RESULTS.md", "DRY_RUN=1 bash scripts/reproduce_all.sh",
-                 "pip-audit"):
+    for step in (
+        "pytest -q --cov",
+        "validate_results --strict results/tpu/run3 results/tpu/run3-devtime results/tpu/run4 results/tpu/run4-devtime",
+        "doc_stats --check docs/RESULTS.md",
+        "DRY_RUN=1 bash scripts/reproduce_all.sh",
+        "pip-audit",
+    ):
         assert step in ci, step
 
 
@@ -78,7 +87,7 @@ def test_release_privileges_sit_on_the_publish_job_only():
 def test_release_builds_checks_attests_and_attaches_assets():
     rel = _wf("release.yml")
     build, publish = _job(rel, "build"), _job(rel, "publish")
-    assert "pyproject.toml" in build and 'v$version' in build
+    assert "pyproject.toml" in build and "v$version" in build
     assert 'scripts/changelog.py release "$VERSION"' in build  # tag-time CHANGELOG gate
     assert "scripts/release_assets.sh" in build and "scripts/release_notes.py" in build
     assert "actions/attest-build-provenance@" in publish and "release/dist/*.whl" in publish
@@ -130,12 +139,37 @@ def test_release_notes_for_the_current_version_come_from_a_cut_changelog(tmp_pat
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     copy = tmp_path / "CHANGELOG.md"
     copy.write_text((ROOT / "CHANGELOG.md").read_text())
-    if subprocess.run([sys.executable, str(ROOT / "scripts" / "changelog.py"), "release", version,
-                       str(copy)], capture_output=True, check=False).returncode:
-        r = subprocess.run([sys.executable, str(ROOT / "scripts" / "changelog.py"), "cut", version,
-                            "2099-01-01", str(copy)], capture_output=True, text=True, check=False)
+    if subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "changelog.py"),
+            "release",
+            version,
+            str(copy),
+            "--allow-pending",
+        ],
+        capture_output=True,
+        check=False,
+    ).returncode:
+        r = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "changelog.py"),
+                "cut",
+                version,
+                "2099-01-01",
+                str(copy),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         assert r.returncode == 0, r.stderr
-    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "release_notes.py"), version,
-                        str(copy)], capture_output=True, text=True, check=False)
+    r = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "release_notes.py"), version, str(copy)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert r.returncode == 0 and "### " in r.stdout, r.stderr
     assert f"[{version}]:" not in r.stdout

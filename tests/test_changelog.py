@@ -45,15 +45,20 @@ def test_structure_accepts_pending_entries_under_unreleased():
     assert changelog.structure_problems(PENDING) == []
 
 
-@pytest.mark.parametrize(("mutate", "expect"), [
-    (lambda t: t.replace("## Unreleased", "## Next"), "first section"),
-    (lambda t: t.replace("## [0.2.0] - 2026-11-22", "## [0.2.0] 2026-11-22"), "bad heading"),
-    (lambda t: t.replace(f"[0.2.0]: {REPO}/releases/tag/v0.2.0\n", ""),
-     "missing link reference [0.2.0]"),
-    (lambda t: t.replace("v0.2.0...HEAD", "v0.1.0...HEAD"), "[Unreleased] must compare"),
-    (lambda t: t.replace(REPO, "https://example.com", 1), "does not point at"),
-    (lambda t: t.replace("### Added\n- old thing\n", ""), "is empty"),
-])
+@pytest.mark.parametrize(
+    ("mutate", "expect"),
+    [
+        (lambda t: t.replace("## Unreleased", "## Next"), "first section"),
+        (lambda t: t.replace("## [0.2.0] - 2026-11-22", "## [0.2.0] 2026-11-22"), "bad heading"),
+        (
+            lambda t: t.replace(f"[0.2.0]: {REPO}/releases/tag/v0.2.0\n", ""),
+            "missing link reference [0.2.0]",
+        ),
+        (lambda t: t.replace("v0.2.0...HEAD", "v0.1.0...HEAD"), "[Unreleased] must compare"),
+        (lambda t: t.replace(REPO, "https://example.com", 1), "does not point at"),
+        (lambda t: t.replace("### Added\n- old thing\n", ""), "is empty"),
+    ],
+)
 def test_structure_flags_broken_files(mutate, expect):
     errs = changelog.structure_problems(mutate(PENDING))
     assert any(expect in e for e in errs), errs
@@ -98,8 +103,9 @@ def test_cli_cut_updates_the_citation_and_exit_codes(tmp_path):
     script = str(ROOT / "scripts" / "changelog.py")
 
     def run(*a: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([sys.executable, script, *a], capture_output=True, text=True,
-                              check=False)
+        return subprocess.run(
+            [sys.executable, script, *a], capture_output=True, text=True, check=False
+        )
 
     path = str(tmp_path / "CHANGELOG.md")
     assert run("release", "0.2.1", path).returncode == 1

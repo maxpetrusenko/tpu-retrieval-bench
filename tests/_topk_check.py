@@ -29,8 +29,9 @@ def _blockwise(q, e, k, metric, mask):
 
 def _pallas(q, e, k, metric, mask):
     # small blocks force multi-tile grids, multi-chunk scans and D tiling; interpret on CPU
-    return pallas_score(q, e, k, metric=metric, mask=mask, compute_dtype=F32,
-                        bm=16, bn=128, bk=128, chunk=256)
+    return pallas_score(
+        q, e, k, metric=metric, mask=mask, compute_dtype=F32, bm=16, bn=128, bk=128, chunk=256
+    )
 
 
 VARIANTS = {"jit_topk": _jit, "blockwise": _blockwise, "pallas": _pallas}
@@ -64,18 +65,18 @@ def check_matches_ref(s, i, ref_s, ref_i, full, k):
     """Set-of-ids equality with numpy_ref, tolerant only for ids tied at the k-th boundary."""
     valid = np.isfinite(ref_s)
     assert np.array_equal(np.isfinite(s), valid), "different number of valid results"
-    np.testing.assert_allclose(np.where(valid, s, 0), np.where(valid, ref_s, 0),
-                               rtol=TOL, atol=TOL)
+    np.testing.assert_allclose(np.where(valid, s, 0), np.where(valid, ref_s, 0), rtol=TOL, atol=TOL)
     for r in range(s.shape[0]):
         nv = int(valid[r].sum())
         got, want = set(i[r, :nv].tolist()), set(ref_i[r, :nv].tolist())
         if got == want:
             continue
         kth = ref_s[r, nv - 1]
-        diff = (got ^ want)
+        diff = got ^ want
         slack = TOL * max(abs(float(kth)), 1.0)
         assert all(abs(full[r, j] - kth) <= slack for j in diff), (
-            f"row {r}: id sets differ away from the k-th boundary: {sorted(diff)[:8]}")
+            f"row {r}: id sets differ away from the k-th boundary: {sorted(diff)[:8]}"
+        )
 
 
 def full_scores(q, e, metric, mask):

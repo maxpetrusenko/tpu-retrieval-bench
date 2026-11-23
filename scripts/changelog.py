@@ -35,7 +35,7 @@ def sections(text: str) -> list[tuple[str, str]]:
     out = []
     for i, m in enumerate(marks):
         end = marks[i + 1].start() if i + 1 < len(marks) else len(main)
-        out.append((m.group(1).strip(), main[m.end():end].strip()))
+        out.append((m.group(1).strip(), main[m.end() : end].strip()))
     return out
 
 
@@ -81,20 +81,24 @@ def structure_problems(text: str) -> list[str]:
     return errs
 
 
-def release_problems(text: str, version: str) -> list[str]:
+def release_problems(text: str, version: str, allow_pending: bool = False) -> list[str]:
     if not VERSION_RE.match(version):
         return [f"version {version!r} is not X.Y.Z"]
     errs: list[str] = []
     secs = dict(sections(text))
     match = [h for h in secs if h.startswith(f"[{version}]")]
     if not match:
-        errs.append(f"no '## [{version}] - DATE' section: run scripts/changelog.py cut "
-                    f"{version} YYYY-MM-DD and commit before tagging")
+        errs.append(
+            f"no '## [{version}] - DATE' section: run scripts/changelog.py cut "
+            f"{version} YYYY-MM-DD and commit before tagging"
+        )
     elif not secs[match[0]]:
         errs.append(f"section [{version}] is empty")
-    if secs.get("Unreleased"):
-        errs.append("Unreleased still has entries at tag time: move them into the version "
-                    "section (scripts/changelog.py cut) before tagging")
+    if secs.get("Unreleased") and not allow_pending:
+        errs.append(
+            "Unreleased still has entries at tag time: move them into the version "
+            "section (scripts/changelog.py cut) before tagging"
+        )
     return errs
 
 
@@ -110,13 +114,20 @@ def cut(text: str, version: str, date: str) -> str:
     refs = dict(LINK_REF.findall(text))
     prev = re.search(r"/compare/v([\d.]+)\.\.\.HEAD$", refs.get("Unreleased", ""))
     prev_v = prev.group(1) if prev else None
-    out = re.sub(r"^## Unreleased\n.*?(?=^## )",
-                 f"## Unreleased\n\n## [{version}] - {date}\n\n{pending}\n\n", text, count=1,
-                 flags=re.MULTILINE | re.DOTALL)
+    out = re.sub(
+        r"^## Unreleased\n.*?(?=^## )",
+        f"## Unreleased\n\n## [{version}] - {date}\n\n{pending}\n\n",
+        text,
+        count=1,
+        flags=re.MULTILINE | re.DOTALL,
+    )
     new_unreleased = f"[Unreleased]: {REPO_URL}/compare/v{version}...HEAD"
     out = re.sub(r"^\[Unreleased\]: \S+$", new_unreleased, out, flags=re.MULTILINE)
-    link = (f"{REPO_URL}/compare/v{prev_v}...v{version}" if prev_v
-            else f"{REPO_URL}/releases/tag/v{version}")
+    link = (
+        f"{REPO_URL}/compare/v{prev_v}...v{version}"
+        if prev_v
+        else f"{REPO_URL}/releases/tag/v{version}"
+    )
     return out.replace(new_unreleased, f"{new_unreleased}\n[{version}]: {link}", 1)
 
 
@@ -133,9 +144,13 @@ def main(argv: list[str]) -> int:
     if cmd == "structure" and len(args) <= 1:
         path = Path(args[0]) if args else default
         errs = structure_problems(path.read_text())
-    elif cmd == "release" and 1 <= len(args) <= 2:
+    elif cmd == "release" and 1 <= len(args) <= 3:
+        # --allow-pending: the version section is already cut and Unreleased holds entries for
+        # the next release (used by the dry run, never by release.yml)
+        allow = "--allow-pending" in args
+        args = [a for a in args if a != "--allow-pending"]
         path = Path(args[1]) if len(args) == 2 else default
-        errs = release_problems(path.read_text(), args[0])
+        errs = release_problems(path.read_text(), args[0], allow_pending=allow)
     elif cmd == "cut" and 2 <= len(args) <= 3:
         path = Path(args[2]) if len(args) == 3 else default
         try:

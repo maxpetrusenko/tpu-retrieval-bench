@@ -26,32 +26,54 @@ pltpu.InterpretParams(*, detect_races=False, out_of_bounds_reads='raise', uninit
 - [V] index_map receives one arg per grid axis and returns BLOCK indices (not element offsets). Matmul guide pattern (bf16 in, f32 accumulate, scratch accumulator, `parallel,parallel,arbitrary`):
 ```python
 pl.pallas_call(
-  functools.partial(matmul_kernel, nsteps=k // bk),
-  grid_spec=pltpu.PrefetchScalarGridSpec(
-    num_scalar_prefetch=0,
-    in_specs=[pl.BlockSpec((bm, bk), lambda i, j, k: (i, k)),
-              pl.BlockSpec((bk, bn), lambda i, j, k: (k, j))],
-    out_specs=pl.BlockSpec((bm, bn), lambda i, j, k: (i, j)),
-    scratch_shapes=[pltpu.VMEM((bm, bn), jnp.float32)],
-    grid=(m // bm, n // bn, k // bk)),
-  out_shape=jax.ShapeDtypeStruct((m, n), x.dtype),
-  compiler_params=pltpu.CompilerParams(dimension_semantics=("parallel", "parallel", "arbitrary")))(x, y)
+    functools.partial(matmul_kernel, nsteps=k // bk),
+    grid_spec=pltpu.PrefetchScalarGridSpec(
+        num_scalar_prefetch=0,
+        in_specs=[
+            pl.BlockSpec((bm, bk), lambda i, j, k: (i, k)),
+            pl.BlockSpec((bk, bn), lambda i, j, k: (k, j)),
+        ],
+        out_specs=pl.BlockSpec((bm, bn), lambda i, j, k: (i, j)),
+        scratch_shapes=[pltpu.VMEM((bm, bn), jnp.float32)],
+        grid=(m // bm, n // bn, k // bk),
+    ),
+    out_shape=jax.ShapeDtypeStruct((m, n), x.dtype),
+    compiler_params=pltpu.CompilerParams(dimension_semantics=("parallel", "parallel", "arbitrary")),
+)(x, y)
 # kernel body
 acc_ref[...] += jnp.dot(x_ref[...], y_ref[...], preferred_element_type=jnp.float32)
+
+
 @pl.when(pl.program_id(2) == nsteps - 1)
-def _(): z_ref[...] = acc_ref[...].astype(z_ref.dtype)
+def _():
+    z_ref[...] = acc_ref[...].astype(z_ref.dtype)
 ```
   Plain `grid=`/`in_specs=`/`scratch_shapes=` kwargs on `pallas_call` also exist (signature above); I ran a no-PrefetchScalarGridSpec 2D-grid kernel with `interpret=True` successfully. The guide still says scratch via `PrefetchScalarGridSpec` is "the only way" (older text); `scratch_shapes` on `pallas_call` is in the 0.12.0.1 signature.
 - [V] Fused RHS transpose (our Q @ E.T, E stored (N, D)): `jax.lax.dot_general(q, e, (((1,), (1,)), ((), ())), preferred_element_type=jnp.float32)` with E BlockSpec `(bn, bk)` and `lambda i,j,k: (j,k)` (matmul guide). Guide says v5e MXU supports fused transpose natively.
 - [V] Tested on CPU (interpret): scoring kernel with fused mask, no D-tiling:
 ```python
 def kern(q_ref, e_ref, m_ref, o_ref):
-    s = jax.lax.dot_general(q_ref[...], e_ref[...], (((1,),(1,)),((),())), preferred_element_type=jnp.float32)
-    o_ref[...] = jnp.where(m_ref[...] != 0, s, -jnp.inf)     # m block (1, bn) int32 broadcasts over rows
-pl.pallas_call(kern, grid=(Q//bq, N//bn),
-  in_specs=[pl.BlockSpec((bq,D), lambda i,j:(i,0)), pl.BlockSpec((bn,D), lambda i,j:(j,0)), pl.BlockSpec((1,bn), lambda i,j:(0,j))],
-  out_specs=pl.BlockSpec((bq,bn), lambda i,j:(i,j)), out_shape=jax.ShapeDtypeStruct((Q,N), jnp.float32),
-  compiler_params=pltpu.CompilerParams(dimension_semantics=("parallel","parallel")), interpret=True)(q,e,mask)
+    s = jax.lax.dot_general(
+        q_ref[...], e_ref[...], (((1,), (1,)), ((), ())), preferred_element_type=jnp.float32
+    )
+    o_ref[...] = jnp.where(
+        m_ref[...] != 0, s, -jnp.inf
+    )  # m block (1, bn) int32 broadcasts over rows
+
+
+pl.pallas_call(
+    kern,
+    grid=(Q // bq, N // bn),
+    in_specs=[
+        pl.BlockSpec((bq, D), lambda i, j: (i, 0)),
+        pl.BlockSpec((bn, D), lambda i, j: (j, 0)),
+        pl.BlockSpec((1, bn), lambda i, j: (0, j)),
+    ],
+    out_specs=pl.BlockSpec((bq, bn), lambda i, j: (i, j)),
+    out_shape=jax.ShapeDtypeStruct((Q, N), jnp.float32),
+    compiler_params=pltpu.CompilerParams(dimension_semantics=("parallel", "parallel")),
+    interpret=True,
+)(q, e, mask)
 ```
   Matched jnp reference (allclose). `(1, bn)` mask block was OK in interpret mode; [U] on real TPU Mosaic a leading dim of 1 on int32 may need (8,128) tiling alignment; unverified, test on hardware (alternative: mask as bf16/f32 or int8 broadcast to (8, bn)).
 - [V] Block-size guidance from matmul guide (v5e, bf16, f32 acc): bm=bk=bn=128 got 3.7%-6% of 197 TFLOP/s; `bm=512, bk=1024, bn=1024` got 78% at 4096^3 and 91.5% at 8192^3 vs XLA 84% / 92%. Rule: make blocks big, constrained by VMEM and pipeline bubbles; sweep. Trailing dims should be multiples of 128 (lanes) and second-last multiples of 8 (f32) / 16 (bf16) [U for bf16 16 rule; standard Mosaic tiling, not re-verified this session].
