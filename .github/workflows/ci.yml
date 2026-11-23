@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 permissions: {}
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -31,13 +32,65 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run mypy
-      - run: uv run pytest -q
-      - run: uv build --wheel
-      - name: wheel ships py.typed
-        run: unzip -l dist/*.whl | grep -q 'trbench/py.typed'
+      - name: pytest with coverage (threshold in pyproject.toml)
+        run: uv run pytest -q --cov
+      - name: committed TPU results validate (strict, no dirty records)
+        run: uv run python -m bench.validate_results --strict results/tpu/run3 results/tpu/run3-devtime
+      - name: doc counts equal the JSON
+        run: uv run python -m bench.doc_stats --check docs/RESULTS.md
+      - name: reproduce_all dry run
+        run: DRY_RUN=1 bash scripts/reproduce_all.sh results/ci-dry-run
+      - name: tpu_smoke dry run
+        run: DRY_RUN=1 bash scripts/tpu_smoke.sh results/ci-dry-smoke
+      - name: notebook constraints match uv.lock
+        run: bash scripts/export_constraints.sh --check
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      - name: build sdist and wheel
+        run: uv build
+      - name: install the wheel into a fresh venv, import it, check py.typed
+        run: |
+          uv venv "$RUNNER_TEMP/wheel-venv"
+          uv pip install --python "$RUNNER_TEMP/wheel-venv/bin/python" dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/wheel-venv/bin/python" - <<'PY'
+          import importlib.resources
+          import trbench
+          assert importlib.resources.files("trbench").joinpath("py.typed").is_file(), "py.typed missing"
+          print("trbench imported from", trbench.__file__)
+          PY
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      - name: export the locked dependency set
+        run: uv export --frozen --no-hashes --no-emit-project --all-extras --all-groups -o "$RUNNER_TEMP/requirements.txt"
+      - name: pip-audit against the lock (no resolution, no install)
+        run: uvx pip-audit==2.10.1 -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip
   test:
-    # Self-hosted runner: never run fork PR code.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # Self-hosted runner: push to main and manual dispatch only, never a pull request, so fork
+    # code cannot reach it. Isolation of the runner is described in SECURITY.md.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, vps-builder]
     timeout-minutes: 30
     permissions:

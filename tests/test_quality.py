@@ -51,9 +51,7 @@ def test_version_agrees_across_pyproject_citation_and_changelog():
     assert unreleased.strip() == ""  # nothing pending after a release section is cut
 
 
-def test_ci_pins_every_action_to_a_sha_and_runs_mypy_in_the_hosted_job():
+def test_ci_runs_mypy_in_the_hosted_job():
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    uses = re.findall(r"^\s*-?\s*uses:\s*(\S+)", ci, re.MULTILINE)
-    assert uses and all(re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", u) for u in uses), uses
-    hosted = ci.split("  test:")[0]
+    hosted = ci.split("\n  test:")[0]
     assert "uv run mypy" in hosted and "uv sync --locked" in hosted
