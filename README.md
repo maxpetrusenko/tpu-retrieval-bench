@@ -35,10 +35,10 @@ Mask support (`False` = excluded): `jit_topk`, `blockwise` and `pallas_score` ar
 Not published to PyPI. Install from git, pinned to a release tag (or a commit):
 
 ```
-pip install "trbench @ git+https://github.com/maxpetrusenko/tpu-retrieval-bench@v0.2.0"
+pip install "trbench @ git+https://github.com/maxpetrusenko/tpu-retrieval-bench@v0.2.1"
 ```
 
-For development and for rerunning the benchmark use a checkout and `uv sync --locked` (see Quickstart). The tag `v0.2.0` exists once the release is cut; until then use `@main`.
+For development and for rerunning the benchmark use a checkout and `uv sync --locked` (see Quickstart). The tag `v0.2.1` exists once the release is cut; until then use `@main`.
 
 ## Quickstart (CPU)
 
