@@ -53,6 +53,8 @@ uv run python -m bench.run --dataset sift-128-euclidean --n-train 100000 --n-tes
 uv run python -m bench.plot
 ```
 
+`bench.plot` writes to `docs/img`, which holds the tracked plots of Run 3. To refresh those on purpose use `bash scripts/regen_docs_img.sh`; the Colab notebook plots into its run directory instead.
+
 Results go to `results/<platform>/<dataset>/k<k>/<algo>/<params>.json`. CPU numbers only exercise the harness; they are not comparable to TPU numbers.
 
 ## Colab TPU
@@ -74,6 +76,18 @@ TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Four runs: 
 - Not measured yet: matmul-only block sweep, recall-versus-QPS curve on real data, GloVe and GIST.
 
 ![SIFT-1M recall vs QPS on TPU v5e-1](docs/img/tpu_recall_qps_sift-128-euclidean_1000000_128_10_bf16.png)
+
+## Verify a release
+
+Each GitHub release attaches the sdist, the wheel, `SHA256SUMS` and `sbom.cdx.json` (a CycloneDX 1.5 SBOM of the locked environment). The sdist and wheel carry a signed build provenance attestation, made by the release workflow with GitHub's OIDC identity (no stored key). To check a download, put the files in one directory and run:
+
+```
+gh attestation verify trbench-<version>-py3-none-any.whl -R maxpetrusenko/tpu-retrieval-bench
+gh attestation verify trbench-<version>.tar.gz -R maxpetrusenko/tpu-retrieval-bench
+sha256sum -c SHA256SUMS
+```
+
+`gh attestation verify` proves the file was built by this repository's `release.yml` from a tag; `sha256sum -c` proves the files match the published checksums (on macOS use `shasum -a 256 -c SHA256SUMS`). Releases before 0.2.1 have no attestation, checksums or SBOM. `bash scripts/release_dry_run.sh` runs the release logic locally without publishing.
 
 ## Cite
 
