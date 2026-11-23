@@ -1,6 +1,6 @@
 [project]
 name = "trbench"
-version = "0.2.0"
+version = "0.2.1"
 description = "Exact top-k retrieval benchmark on TPU: XLA vs Pallas"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -51,6 +51,16 @@ include = ["src/trbench/py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["fuzz: Hypothesis fuzz and property tests of the validator (CI runs them with more examples)"]
+
+[tool.bandit]
+# CI runs: bandit -c pyproject.toml -ll -r src bench scripts fuzz (medium severity and up).
+# tests/ is not scanned: it asserts and shells out by design.
+exclude_dirs = ["tests", ".venv"]
+# B101 (assert): the asserts in src/ and bench/ are internal invariants and type narrowing, not
+# input validation or access control; user input is checked with explicit raises. -ll already
+# hides low severity, so this skip only keeps a plain `bandit -r` run readable.
+skips = ["B101"]
 
 [tool.coverage.run]
 source = ["trbench", "bench"]

@@ -41,7 +41,12 @@ REL_TOL = 0.05  # qps vs best time, latency min vs best time
 
 
 def _num(x: object) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+    if not isinstance(x, (int, float)) or isinstance(x, bool):
+        return False
+    try:
+        return math.isfinite(x)
+    except OverflowError:  # an int too large for a float, e.g. 10**400 from untrusted JSON
+        return False
 
 
 def _missing(obj: object, keys: tuple[str, ...], where: str, errs: list[str]) -> bool:
@@ -211,13 +216,28 @@ def iter_records(root: str | Path) -> Iterator[Path]:
     yield from ([root] if root.is_file() else sorted(root.rglob("*.json")))
 
 
+def validate_json_bytes(data: bytes | str) -> list[str]:
+    """Parse raw record text and validate it. Never raises: any input yields a list of problems.
+
+    This is the entry point for untrusted bytes (the fuzz harness and the property tests drive
+    it). Undecodable text, invalid JSON, JSON nested too deeply to parse, and a record of the
+    wrong shape each come back as a problem string.
+    """
+    try:
+        text = data if isinstance(data, str) else data.decode("utf-8")
+        rec = json.loads(text)
+    except (UnicodeDecodeError, ValueError, RecursionError) as ex:
+        return [f"unreadable: {type(ex).__name__}: {ex}"[:200]]
+    return validate_record(rec)
+
+
 def validate_tree(root: str | Path) -> dict[str, list[str]]:
     """Map path -> problems for every JSON under root that has any (empty dict = all good)."""
     bad: dict[str, list[str]] = {}
     for path in iter_records(root):
         try:
-            errs = validate_record(json.loads(path.read_text()))
-        except (OSError, json.JSONDecodeError) as ex:
+            errs = validate_json_bytes(path.read_bytes())
+        except OSError as ex:
             errs = [f"unreadable: {ex}"]
         if errs:
             bad[str(path)] = errs

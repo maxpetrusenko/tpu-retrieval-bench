@@ -6,7 +6,7 @@ abstract: "A JAX and Pallas benchmark for exact top-k embedding retrieval on TPU
 authors:
   - family-names: Petrusenko
     given-names: Max
-version: 0.2.0
+version: 0.2.1
 date-released: 2026-11-22
 license: Apache-2.0
 # TODO: after the first GitHub release (v0.2.0), archive it on Zenodo and add the DOI here

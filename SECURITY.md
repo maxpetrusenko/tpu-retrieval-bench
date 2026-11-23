@@ -41,11 +41,27 @@ Fixes land on `main` and ship in the next release tag.
 This repository is a benchmark harness. Reports about the CI workflows, dependency
 pinning and the benchmark code are in scope.
 
+## How changes are reviewed
+
+This is a solo-maintainer project, so there is no second human reviewer. Changes go through a
+pull request into `main`, and branch protection requires the CI checks `lint-test (py3.12)`,
+`lint-test (py3.13)` and `audit` to pass before a merge. The `sast (bandit)`, `fuzz
+(hypothesis)`, `package` and CodeQL checks also run on every pull request. An AI coding agent
+writes and reviews part of the diffs, and its review is not a substitute for an independent
+human one. Scorecard's Code-Review check stays low for that reason; adding a second maintainer
+is the fix, and it has not happened yet.
+
 ## Automated checks
 
-Dependencies are locked (`uv.lock`) and audited in CI (`pip-audit`). CodeQL scans the Python
-code and OpenSSF Scorecard tracks the supply-chain posture. Actions are pinned to commit SHAs
-and updated by dependabot.
+Dependencies are locked (`uv.lock`) and audited in CI (`pip-audit`). CodeQL and bandit
+(medium severity and up) scan the Python code, Hypothesis fuzz tests and an atheris harness
+exercise the result validator, and OpenSSF Scorecard tracks the supply-chain posture. Actions
+are pinned to commit SHAs and updated by dependabot. Releases carry a build provenance
+attestation, `SHA256SUMS` and a CycloneDX SBOM (README, "Verify a release").
+
+Known exception: the Colab notebook and the manual `tpu-smoke` workflow install with
+`pip -c notebooks/constraints.txt`, which pins versions but not hashes, because `jax[tpu]`
+comes from a Google-hosted wheel index. Scorecard's Pinned-Dependencies check may flag it.
 
 ## Self-hosted runner
 

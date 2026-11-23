@@ -4,6 +4,22 @@ All notable changes. Format: Keep a Changelog; versions follow `pyproject.toml`.
 
 ## Unreleased
 
+### Added
+- Run 4 (#20): the `v0.2.0` notebook rerun unmodified in a second Colab TPU v5e-1 session (`results/tpu/run4`, `run4-devtime`: 121 records, 0 dirty, strict validation passes). `bench/session_variance.py` joins two runs per cell and reports between-session variance (small shapes median 3.8%, max 35.2%; large shapes median 0.3%, max 20.2%) and which claims against `jit_topk` hold in both sessions; `results/analysis/` holds the output and the first `scripts/tpu_smoke.sh` TPU log. `docs/RESULTS.md` section 10, README, `docs/BENCHMARK_METHOD.md` rule 9 and `docs/QUALITY.md` updated; CI validates run4 with `--strict`.
+- Release integrity (#21): `release.yml` is split into a read-only `build` job and a `publish` job (the only one with `contents: write`, `id-token: write`, `attestations: write`). `publish` attaches a SLSA build provenance attestation for the sdist and wheel (`actions/attest-build-provenance`), `SHA256SUMS` and a CycloneDX 1.5 SBOM (`sbom.cdx.json`, from `uv.lock`) to the GitHub release. README "Verify a release" gives `gh attestation verify` and `sha256sum -c`. `scripts/release_assets.sh` and `scripts/release_dry_run.sh` run the same logic locally (build, checksums, SBOM, CHANGELOG gate, notes) and `tests/test_release_dry_run.py` runs them.
+- Fuzzing (#21): Hypothesis property and fuzz tests of the result validator and record parsing (`tests/test_fuzz.py`, marker `fuzz`, a `fuzz (hypothesis)` CI job with 2000 examples per test), a coverage-guided atheris harness (`fuzz/fuzz_validate.py`) and `trbench.validate.validate_json_bytes`, the never-raises entry point for untrusted record text.
+- SAST (#21): a `sast (bandit)` CI job (`bandit -ll`, config in `pyproject.toml`). `SECURITY.md` gains a solo-maintainer review note.
+- `scripts/changelog.py`: `structure` (normal test suite: headings and link references), `release` (tag-time gate) and `cut` (move Unreleased into the new version section, fix links, set the `CITATION.cff` date). `scripts/regen_docs_img.sh` regenerates the tracked `docs/img` plots from Run 3 as an explicit maintainer step.
+
+### Changed
+- The test that forced `Unreleased` to be empty is replaced: the suite checks CHANGELOG structure only, and the empty-Unreleased rule moves to the tag-time gate in `release.yml`.
+- `notebooks/colab_tpu.ipynb` writes plots to `<RUN_ID>/plots` (untracked) and zips only `results`, so the plot cell no longer dirties tracked files in `docs/img`.
+- Version 0.2.1 in `pyproject.toml`, `uv.lock` and `CITATION.cff`.
+
+### Fixed
+- `bench.validate_results` and `trbench.validate.validate_record` raised `OverflowError` on an integer too large for a float (for example `10**400` in a metric), instead of reporting a validation error. Found by the new fuzz tests. Undecodable or deeply nested record files are reported as unreadable instead of crashing the tree walk.
+- `bench/download.py` fetched datasets over plain HTTP and passed any URL scheme to `urlopen` (bandit B310). It now uses `https://ann-benchmarks.com/` and refuses non-https URLs.
+
 ## [0.2.0] - 2026-11-22
 
 Covers PRs #9 to #12 and the quality pass that follows them.

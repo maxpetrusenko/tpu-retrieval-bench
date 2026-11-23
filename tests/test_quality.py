@@ -40,15 +40,22 @@ def test_type_ignores_are_few_targeted_and_commented():
     assert all(re.search(r"type: ignore\[[a-z-]+\]\s+#\s+\S", ln) for ln in hits), hits
 
 
-def test_version_agrees_across_pyproject_citation_and_changelog():
+def test_version_agrees_across_pyproject_and_citation():
     version = PYPROJECT["project"]["version"]
     cff = (ROOT / "CITATION.cff").read_text()
     assert re.search(rf"^version: {re.escape(version)}$", cff, re.MULTILINE)
     assert re.search(r"^license: Apache-2\.0$", cff, re.MULTILINE)
+
+
+def test_changelog_covers_the_current_version_by_a_section_or_pending_entries():
+    """Structure only. Whether Unreleased must be empty is decided at tag time by
+    release.yml (`scripts/changelog.py release`), not here, so work can pile up between releases."""
+    version = PYPROJECT["project"]["version"]
     changelog = (ROOT / "CHANGELOG.md").read_text()
-    assert re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE)
-    unreleased = changelog.split("## Unreleased")[1].split("## [")[0]
-    assert unreleased.strip() == ""  # nothing pending after a release section is cut
+    has_section = re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$",
+                            changelog, re.MULTILINE)
+    pending = changelog.split("## Unreleased")[1].split("\n## ")[0].strip()
+    assert has_section or pending, f"no [{version}] section and nothing under Unreleased"
 
 
 def test_ci_runs_mypy_in_the_hosted_job():
