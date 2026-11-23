@@ -81,7 +81,7 @@ def structure_problems(text: str) -> list[str]:
     return errs
 
 
-def release_problems(text: str, version: str) -> list[str]:
+def release_problems(text: str, version: str, allow_pending: bool = False) -> list[str]:
     if not VERSION_RE.match(version):
         return [f"version {version!r} is not X.Y.Z"]
     errs: list[str] = []
@@ -94,7 +94,7 @@ def release_problems(text: str, version: str) -> list[str]:
         )
     elif not secs[match[0]]:
         errs.append(f"section [{version}] is empty")
-    if secs.get("Unreleased"):
+    if secs.get("Unreleased") and not allow_pending:
         errs.append(
             "Unreleased still has entries at tag time: move them into the version "
             "section (scripts/changelog.py cut) before tagging"
@@ -144,9 +144,13 @@ def main(argv: list[str]) -> int:
     if cmd == "structure" and len(args) <= 1:
         path = Path(args[0]) if args else default
         errs = structure_problems(path.read_text())
-    elif cmd == "release" and 1 <= len(args) <= 2:
+    elif cmd == "release" and 1 <= len(args) <= 3:
+        # --allow-pending: the version section is already cut and Unreleased holds entries for
+        # the next release (used by the dry run, never by release.yml)
+        allow = "--allow-pending" in args
+        args = [a for a in args if a != "--allow-pending"]
         path = Path(args[1]) if len(args) == 2 else default
-        errs = release_problems(path.read_text(), args[0])
+        errs = release_problems(path.read_text(), args[0], allow_pending=allow)
     elif cmd == "cut" and 2 <= len(args) <= 3:
         path = Path(args[2]) if len(args) == 3 else default
         try:

@@ -140,7 +140,14 @@ def test_release_notes_for_the_current_version_come_from_a_cut_changelog(tmp_pat
     copy = tmp_path / "CHANGELOG.md"
     copy.write_text((ROOT / "CHANGELOG.md").read_text())
     if subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "changelog.py"), "release", version, str(copy)],
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "changelog.py"),
+            "release",
+            version,
+            str(copy),
+            "--allow-pending",
+        ],
         capture_output=True,
         check=False,
     ).returncode:

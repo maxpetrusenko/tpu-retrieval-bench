@@ -28,23 +28,23 @@ def test_py_typed_marker_ships_in_the_wheel():
     assert "Typing :: Typed" in PYPROJECT["project"]["classifiers"]
 
 
-def test_mypy_is_strict_for_the_library():
+def test_mypy_is_strict_for_the_library_and_bench():
     cfg = PYPROJECT["tool"]["mypy"]
-    assert cfg["check_untyped_defs"] is True and "src/trbench" in cfg["files"]
-    strict = next(o for o in cfg["overrides"] if "trbench.*" in o["module"])
-    assert strict["disallow_untyped_defs"] and strict["disallow_untyped_calls"]
-    assert strict["warn_return_any"] and strict["disallow_any_generics"]
+    assert cfg["strict"] is True
+    assert "src/trbench" in cfg["files"] and "bench" in cfg["files"]
+    assert not cfg.get("overrides"), "no per-module relaxations or exemptions"
 
 
 def test_type_ignores_are_few_targeted_and_commented():
-    hits = [
-        ln
-        for p in (ROOT / "src").rglob("*.py")
-        for ln in p.read_text().splitlines()
-        if "type: ignore" in ln
-    ]
-    assert len(hits) <= 4
-    assert all(re.search(r"type: ignore\[[a-z-]+\]\s+#\s+\S", ln) for ln in hits), hits
+    for tree, limit in (("src", 4), ("bench", 4)):
+        hits = [
+            ln
+            for p in (ROOT / tree).rglob("*.py")
+            for ln in p.read_text().splitlines()
+            if "type: ignore" in ln
+        ]
+        assert len(hits) <= limit, (tree, hits)
+        assert all(re.search(r"type: ignore\[[a-z-]+\]\s+#\s+\S", ln) for ln in hits), hits
 
 
 def test_version_agrees_across_pyproject_and_citation():
@@ -70,3 +70,10 @@ def test_ci_runs_mypy_in_the_hosted_job():
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     hosted = ci.split("\n  test:")[0]
     assert "uv run mypy" in hosted and "uv sync --locked" in hosted
+
+
+def test_ci_and_pre_commit_check_formatting():
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    hosted = ci.split("\n  test:")[0]
+    assert "uv run ruff format --check ." in hosted
+    assert "ruff-format" in (ROOT / ".pre-commit-config.yaml").read_text()
