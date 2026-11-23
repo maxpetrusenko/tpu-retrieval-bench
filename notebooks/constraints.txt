@@ -7,7 +7,7 @@ fonttools==4.68.0
     # via matplotlib
 h5py==3.16.0
     # via trbench
-jax==0.12.0.1
+jax==0.12.1
     # via trbench
 jaxlib==0.12.0.1
     # via
