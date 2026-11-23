@@ -87,6 +87,40 @@ jobs:
         run: uv export --frozen --no-hashes --no-emit-project --all-extras --all-groups -o "$RUNNER_TEMP/requirements.txt"
       - name: pip-audit against the lock (no resolution, no install)
         run: uvx pip-audit==2.10.1 -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip
+  fuzz:
+    name: fuzz (hypothesis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: fuzz the validator and record parsing (more examples than the default suite)
+        env:
+          FUZZ_EXAMPLES: "2000"
+        run: uv run pytest -m fuzz -q -p no:cacheprovider
+  sast:
+    name: sast (bandit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.12"
+      - name: bandit, medium severity and up (config in pyproject.toml)
+        run: uvx --from "bandit[toml]==1.9.4" bandit -c pyproject.toml -ll -r src bench scripts fuzz
   test:
     # Self-hosted runner: push to main and manual dispatch only, never a pull request, so fork
     # code cannot reach it. Isolation of the runner is described in SECURITY.md.
