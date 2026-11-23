@@ -4,12 +4,14 @@ on:
     tags: ["v*"]
 permissions: {}
 jobs:
-  release:
-    name: release
+  build:
+    # Read-only: builds the distributions, runs the release gates, writes the checksums and the
+    # SBOM. The same scripts run locally as scripts/release_dry_run.sh.
+    name: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -17,6 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           python-version: "3.12"
+          version: "0.13.6"
       - name: tag must equal the pyproject version
         env:
           TAG: ${{ github.ref_name }}
@@ -27,12 +30,47 @@ jobs:
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: CHANGELOG gate (version section present, Unreleased empty)
+        run: python3 scripts/changelog.py release "$VERSION"
       - name: build sdist and wheel
-        run: uv build
+        run: uv build --out-dir release/dist
+      - name: SHA256SUMS and CycloneDX SBOM
+        run: bash scripts/release_assets.sh release/dist release/assets
       - name: release notes from the CHANGELOG section
-        run: python3 scripts/release_notes.py "$VERSION" > "$RUNNER_TEMP/notes.md"
-      - name: create the GitHub release
+        run: python3 scripts/release_notes.py "$VERSION" > release/notes.md
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+          retention-days: 5
+  publish:
+    # The only job with write access: build provenance attestation (OIDC, no stored key) and
+    # the GitHub release. It checks out no code; it publishes what the build job produced.
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: release
+      - name: recheck the checksums after the artifact hop
+        run: cd release/dist && sha256sum -c ../assets/SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release/dist/*.whl
+            release/dist/*.tar.gz
+      - name: create the GitHub release with dists, checksums and SBOM
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" dist/* --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+        run: |
+          gh release create "$TAG" release/dist/*.whl release/dist/*.tar.gz release/assets/SHA256SUMS release/assets/sbom.cdx.json \
+            --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file release/notes.md --verify-tag
