@@ -46,7 +46,7 @@ def test_ci_has_the_checks_branch_protection_names():
     assert "name: lint-test (py${{ matrix.python-version }})" in ci
     assert re.search(r"^  audit:\n    name: audit$", ci, re.MULTILINE)
     assert re.search(r"^  package:\n    name: package$", ci, re.MULTILINE)
-    for step in ("pytest -q --cov", "validate_results --strict results/tpu/run3 results/tpu/run3-devtime",
+    for step in ("pytest -q --cov", "validate_results --strict results/tpu/run3 results/tpu/run3-devtime results/tpu/run4 results/tpu/run4-devtime",
                  "doc_stats --check docs/RESULTS.md", "DRY_RUN=1 bash scripts/reproduce_all.sh",
                  "pip-audit"):
         assert step in ci, step

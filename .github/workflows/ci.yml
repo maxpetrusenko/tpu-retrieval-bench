@@ -35,7 +35,7 @@ jobs:
       - name: pytest with coverage (threshold in pyproject.toml)
         run: uv run pytest -q --cov
       - name: committed TPU results validate (strict, no dirty records)
-        run: uv run python -m bench.validate_results --strict results/tpu/run3 results/tpu/run3-devtime
+        run: uv run python -m bench.validate_results --strict results/tpu/run3 results/tpu/run3-devtime results/tpu/run4 results/tpu/run4-devtime
       - name: doc counts equal the JSON
         run: uv run python -m bench.doc_stats --check docs/RESULTS.md
       - name: reproduce_all dry run
