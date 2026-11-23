@@ -6,12 +6,13 @@ import argparse
 import hashlib
 import shutil
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from trbench.datasets import DATA_DIR, DATASETS
 
-URL = "http://ann-benchmarks.com/{}.hdf5"
+URL = "https://ann-benchmarks.com/{}.hdf5"
 # ann-benchmarks.com answered HTTP 403 to the default Python-urllib agent (Colab, 2026-11-18).
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -29,9 +30,14 @@ def sha256(path: Path) -> str:
 
 
 def download(url: str, dest: Path) -> None:
-    """Stream url to dest with a browser-like User-Agent."""
+    """Stream an https url to dest with a browser-like User-Agent. Other schemes are refused."""
+    if urllib.parse.urlsplit(url).scheme != "https":
+        raise ValueError(f"refusing non-https download url: {url!r}")
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req) as resp, dest.open("wb") as f:
+    with (
+        dest.open("wb") as f,
+        urllib.request.urlopen(req) as resp,  # nosec B310 - https only, checked above
+    ):
         shutil.copyfileobj(resp, f, 1 << 20)
 
 
