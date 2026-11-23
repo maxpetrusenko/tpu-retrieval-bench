@@ -4,6 +4,8 @@ All notable changes. Format: Keep a Changelog; versions follow `pyproject.toml`.
 
 ## Unreleased
 
+## [0.2.1] - 2026-11-23
+
 ### Added
 - Run 4 (#20): the `v0.2.0` notebook rerun unmodified in a second Colab TPU v5e-1 session (`results/tpu/run4`, `run4-devtime`: 121 records, 0 dirty, strict validation passes). `bench/session_variance.py` joins two runs per cell and reports between-session variance (small shapes median 3.8%, max 35.2%; large shapes median 0.3%, max 20.2%) and which claims against `jit_topk` hold in both sessions; `results/analysis/` holds the output and the first `scripts/tpu_smoke.sh` TPU log. `docs/RESULTS.md` section 10, README, `docs/BENCHMARK_METHOD.md` rule 9 and `docs/QUALITY.md` updated; CI validates run4 with `--strict`.
 - Release integrity (#21): `release.yml` is split into a read-only `build` job and a `publish` job (the only one with `contents: write`, `id-token: write`, `attestations: write`). `publish` attaches a SLSA build provenance attestation for the sdist and wheel (`actions/attest-build-provenance`), `SHA256SUMS` and a CycloneDX 1.5 SBOM (`sbom.cdx.json`, from `uv.lock`) to the GitHub release. README "Verify a release" gives `gh attestation verify` and `sha256sum -c`. `scripts/release_assets.sh` and `scripts/release_dry_run.sh` run the same logic locally (build, checksums, SBOM, CHANGELOG gate, notes) and `tests/test_release_dry_run.py` runs them.
@@ -65,5 +67,6 @@ Covers PRs #9 to #12 and the quality pass that follows them.
 - ann-benchmarks HDF5 loader, k-nn recall, roofline labels, plots.
 - TPU v5e-1 results and `docs/RESULTS.md`.
 
-[Unreleased]: https://github.com/maxpetrusenko/tpu-retrieval-bench/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/maxpetrusenko/tpu-retrieval-bench/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/maxpetrusenko/tpu-retrieval-bench/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/maxpetrusenko/tpu-retrieval-bench/releases/tag/v0.2.0

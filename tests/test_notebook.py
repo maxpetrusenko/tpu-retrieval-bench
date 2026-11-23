@@ -28,7 +28,7 @@ def test_notebook_run_cell_calls_reproduce_all_with_run_id():
 
 def test_notebook_checks_out_a_pinned_ref():
     setup = next(c for c in _code() if re.search(r"^REF\s*=", c, re.MULTILINE))
-    assert re.search(r'^REF = "v0\.2\.0"', setup, re.MULTILINE)
+    assert re.search(r'^REF = "v0\.2\.1"', setup, re.MULTILINE)
     assert "bump" in setup.lower()
     assert any("git checkout" in c and "{REF}" in c for c in _code())
 
