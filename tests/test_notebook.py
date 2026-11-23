@@ -44,3 +44,18 @@ def test_notebook_installs_from_constraints_and_locked_jax():
 
 def test_notebook_text_does_not_name_a_stale_run():
     assert "Run-2 grid" not in _text()
+
+
+def test_notebook_plots_go_to_the_untracked_run_directory_not_docs_img():
+    plot = next(c for c in _code() if "bench/plot.py" in c)
+    assert "--results {RUN_ID}" in plot and "--out {RUN_ID}/plots" in plot
+    assert "docs/img" not in "\n".join(line for line in plot.splitlines()
+                                       if not line.startswith("#"))
+    zip_cell = next(c for c in _code() if "zip" in c)
+    assert "docs/img" not in zip_cell and "results.zip results" in zip_cell
+
+
+def test_docs_img_regeneration_is_an_explicit_maintainer_script():
+    script = (ROOT / "scripts" / "regen_docs_img.sh").read_text()
+    assert "bench.plot --results results/tpu/run3 --platform tpu --out docs/img" in script
+    assert "docs/img" not in "\n".join(c for c in _code() if "reproduce_all" in c)
