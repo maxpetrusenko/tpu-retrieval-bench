@@ -51,14 +51,15 @@ Results go to `results/<platform>/<dataset>/k<k>/<algo>/<params>.json`. CPU numb
 
 ## Results
 
-TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Two runs: Run 1 (unfused kernels, 2026-11-18) and Run 2 (fused kernels, block sweeps, loop and device timing, 2026-11-21). Full report: [docs/RESULTS.md](docs/RESULTS.md).
+TPU v5e-1 (free Colab, jax 0.12.0.1), k=10, bf16, N up to 1M, D=128. Three runs: Run 1 (unfused kernels, 2026-11-18), Run 2 (fused kernels, block sweeps, loop and device timing, 2026-11-21) and Run 3 (clean rerun, 2026-11-22). Full report: [docs/RESULTS.md](docs/RESULTS.md). The numbers below are Run 3: commit 0945fb1, 121 records, 0 dirty, 20 repetitions each, headline = median pass, plots from Run 3.
 
-- Stock XLA (`jit_matmul_topk`) beat the unfused Pallas scoring kernel at 8 of 9 shapes (0.51x to 1.03x; one 3% win at N=1M, M=128).
-- Selection dominates: `top_k` took 1.25x to 8.2x the matmul time at M >= 16, 85% to 89% of exact-path time at M=1024 and SIFT-1M. The 27x claim did not reproduce at k=10. No exact variant passed 3.9% of peak.
-- Fusing selection into the kernel helped: exact `pallas_fused_topk` was 1.31x jit at N=1M, M=1024 with a tuned block config (tuned, bn=1024: 29,816 vs 22,738 QPS); at the default config (bn=512) it was 1.03x (23,436 QPS), and it was slower at M <= 16 (small-M ratios mostly reflect per-call dispatch cost). The approximate `pallas_fused_bucket` was 1.28x to 2.39x jit at M >= 128 (2.39x is tuned, 54,394 QPS at N=1M, M=1024, recall 1.0; 1.77x at the default config; 0.9997 recall on SIFT-1M). The default-config cells at N=1M, M in {128, 1024} need a rerun because the block sweep overwrote them.
-- Block size: a 6% effect for the scoring kernel, 1.5x to 4.9x (best over worst) for the fused kernels; bn=1024 was best.
-- `approx_max_k` at recall target 0.95: 567,116 QPS on SIFT-1M at recall 0.980, 23.5x the exact baseline (24,084 QPS), 77% of peak on synthetic N=1M, M=1024. The recall-target sweep (0.80 to 0.99) showed no effect on synthetic data: recall 1.0 at every target, QPS within 5.6%. It is not a recall curve.
-- Wall timing understates throughput by up to 5.9x (jit, N=65,536, M=1) against in-jit loop timing; device time sits 0.28 to 0.70 ms under wall time.
+- Stock XLA (`jit_matmul_topk`) beat the unfused Pallas scoring kernel at every default shape except one tie (1.00x at N=1M, M=128, within noise; 0.50x to 0.93x elsewhere).
+- Selection dominates: `sel/matmul` is 3.61 (N=1M, M=128), 6.48 (N=1M, M=1024) and 8.18 on SIFT-1M; no exact variant passed 3.9% of peak. The 27x claim did not reproduce at k=10.
+- Fusing selection into the kernel helped at M=1024: exact `pallas_fused_topk` was 1.19x jit at N=65,536, and at N=1M 1.03x at the default config (23,414 vs 22,739 QPS) and 1.31x tuned (bn=1024, 29,722 QPS). At M=128 it lost even tuned (0.97x). The approximate `pallas_fused_bucket` was 1.23x to 1.83x jit at M >= 128 on synthetic data (1.41x and 1.76x at N=1M by default, 2.37x tuned at M=1024, 53,943 QPS), 1.62x on SIFT-1M (recall 0.9997). Both fused wins pass the CI noise check; at M <= 16 every Pallas variant is slower than jit.
+- Block size: 6% to 7% for the scoring kernel, 2.3x to 4.9x (fused_topk) and 1.5x to 2.1x (fused_bucket) best over worst; bn=1024 was best in all four fused sweeps.
+- `approx_max_k` at recall target 0.95: 565,089 QPS on SIFT-1M at recall 0.9802, 23.4x the exact baseline (24,120 QPS), 75.7% of peak on synthetic N=1M, M=1024 (579,189 QPS, 25.5x). The recall-target sweep (0.80 to 0.99) kept recall at 1.0 and moved QPS by 5.4%; it is not a recall curve.
+- Wall timing carries a 0.32 to 0.60 ms per-call overhead (device time, N=1M), 47% of an `approx_max_k` call at M=128.
+- Run 3 reproduced Run 2 within 2% on the best pass at N=1M, M >= 128 and SIFT-1M; small shapes moved up to 36% between sessions, which the within-run CIs do not show.
 - Not measured yet: matmul-only block sweep, recall-versus-QPS curve on real data, GloVe and GIST.
 
 ![SIFT-1M recall vs QPS on TPU v5e-1](docs/img/tpu_recall_qps_sift-128-euclidean_1000000_128_10_bf16.png)
