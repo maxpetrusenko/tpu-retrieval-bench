@@ -20,7 +20,24 @@ uv run mypy
 uv run python bench/run.py --algos jit_topk,blockwise,pallas_score --m 16 --n 65536 --d 128 --k 10
 ```
 
-CI runs ruff, mypy and pytest on GitHub-hosted runners (Python 3.12 and 3.13), and ruff, pytest and the result validator on a self-hosted runner (`[self-hosted, vps-builder]`). Pull requests from forks do not run CI automatically: the runner is ours, so a maintainer must read the diff and approve the run. Run the commands above locally first.
+CI on GitHub-hosted runners: `lint-test` (ruff, mypy, pytest with a coverage threshold, `validate_results --strict` on `results/tpu/run3` and `run3-devtime`, `doc_stats --check`, the `reproduce_all.sh` dry run, the notebook constraints check; Python 3.12 and 3.13), `package` (`uv build`, wheel installed into a fresh venv, import, `py.typed`) and `audit` (`pip-audit` on the locked dependencies). CodeQL and OpenSSF Scorecard run as their own workflows. A self-hosted job (`[self-hosted, vps-builder]`: ruff, pytest, the result validator) runs only on pushes to `main` and manual dispatch, never for pull requests; see `SECURITY.md` for the runner's isolation. Pull requests from forks run the hosted jobs only, and workflows from first-time contributors wait for a maintainer to approve them. Run the commands above locally first.
+
+Coverage: `uv run pytest -q --cov` fails below the `fail_under` threshold in `pyproject.toml` (the measured value minus 2, rounded down). Raise it when coverage rises; do not lower it to land a change.
+
+## TPU smoke check
+
+`scripts/tpu_smoke.sh` runs one tiny shape per algorithm (N=65,536, M=128, D=128, k=10, bf16, 5 repetitions) on a real TPU, validates the records, and compares QPS with the committed Run 3 records in `results/tpu/run3`. It exits non-zero when the TPU is missing, an algorithm fails to run or its record is missing, or validation fails, and prints a warning when QPS drifts outside 1/1.5x to 1.5x of Run 3 (`DRIFT_WARN` changes the tolerance). Run it by hand on any TPU VM or Colab:
+
+```
+PYTHON=python3 bash scripts/tpu_smoke.sh            # TPU VM with jax[tpu] installed
+!PYTHON=python3 bash scripts/tpu_smoke.sh           # Colab cell, never import jax in the kernel
+```
+
+The `tpu-smoke` workflow (`workflow_dispatch` only) runs the same script on a runner labelled `[self-hosted, tpu]`. No such runner is registered today, and nothing triggers the workflow automatically.
+
+## Dependency constraints for the notebook
+
+`notebooks/constraints.txt` pins the Colab install to `uv.lock`. After changing dependencies run `uv lock` and then `bash scripts/export_constraints.sh`; CI fails when the file is out of date.
 
 ## CPU interpret mode versus TPU claims
 
